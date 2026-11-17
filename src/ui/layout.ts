@@ -39,7 +39,7 @@ export function buildEdges(game: Game): Edge[] {
         if (to === from) continue;
         const need = to.needs.find((n) => n.resource === make.resource);
         // Conditions ("only while almost empty") and no-op needs are not flows.
-        if (!need || need.kind === 'none' || need.atMost < 1) continue;
+        if (!need || need.kind === 'none' || need.kind === 'condition' || need.atMost < 1) continue;
         edges.push({
           id: `${from.id}>${to.id}:${make.resource.id}`,
           from,

@@ -70,6 +70,13 @@ export interface UpgradeDef {
   costs: CostDef[];
   requires?: string[];
   changes: ChangeDef[];
+  /** Raises resource storage limits (max) by these amounts. */
+  capacity?: CostDef[];
+  /**
+   * Shown in the Build panel instead of on a node: home and storage upgrades
+   * that aren't really about one node.
+   */
+  building?: boolean;
   /** Buying it ends the game. Its effect is kept secret in the UI. */
   final?: boolean;
 }

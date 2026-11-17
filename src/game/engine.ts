@@ -1,8 +1,8 @@
 // The game simulation. No UI code here, so it can be unit tested.
 // Rules are a 1:1 port of legacy/core/*.py (v1.3.2); see the golden test.
 
-import type { ChangeDef, ConverterDef, GameData, RecipeDef, ResourceDef, UpgradeDef } from './defs';
-import { DATA } from './data';
+import type { ChangeDef, ConverterDef, GameData, RecipeDef, ResourceDef, UpgradeDef } from './defs.ts';
+import { DATA } from './data.ts';
 
 /** One tick (production cycle) lasts this long in real time. */
 export const TICK_MS = 500;
@@ -13,19 +13,23 @@ const EPS = 1e-10;
 // ---------------------------------------------------------------- Resource
 
 export class Resource {
+  readonly def: ResourceDef;
   amount: number;
+  /** Storage limit; buildings can raise it. */
+  max: number;
   /** Produced during the current tick; added at the end of the tick (see flush). */
   pending = 0;
   /** Net change during the last tick (for rate display). */
   lastDelta = 0;
 
-  constructor(readonly def: ResourceDef) {
+  constructor(def: ResourceDef) {
+    this.def = def;
     this.amount = def.start ?? 0;
+    this.max = def.max;
   }
 
   get id() { return this.def.id; }
   get name() { return this.def.name; }
-  get max() { return this.def.max; }
 
   canTake(amount: number): boolean {
     return this.amount >= amount - EPS;
@@ -63,13 +67,19 @@ export type RecipeKind =
   | 'none';     // amount 0, no limits: has no effect
 
 export class Recipe {
-  constructor(
-    public resource: Resource,
-    public amount = 0,
-    public atLeast = 0,
-    public atMost = Infinity,
-    public byproduct = false,
-  ) {}
+  resource: Resource;
+  amount: number;
+  atLeast: number;
+  atMost: number;
+  byproduct: boolean;
+
+  constructor(resource: Resource, amount = 0, atLeast = 0, atMost = Infinity, byproduct = false) {
+    this.resource = resource;
+    this.amount = amount;
+    this.atLeast = atLeast;
+    this.atMost = atMost;
+    this.byproduct = byproduct;
+  }
 
   clone(): Recipe {
     return new Recipe(this.resource, this.amount, this.atLeast, this.atMost, this.byproduct);
@@ -92,13 +102,15 @@ export type ConverterState =
   | 'full';    // every output is at max
 
 export class Converter {
+  readonly def: ConverterDef;
   name: string;
   needs: Recipe[];
   makes: Recipe[];
   state: ConverterState;
   upgrades: Upgrade[] = [];
 
-  constructor(readonly def: ConverterDef, game: Game) {
+  constructor(def: ConverterDef, game: Game) {
+    this.def = def;
     this.name = def.name;
     this.needs = def.needs.map((r) => game.recipe(r));
     this.makes = def.makes.map((r) => game.recipe(r));
@@ -169,6 +181,12 @@ export interface RecipeEffect {
   after: { amount: number; atLeast: number };
 }
 
+export interface CapacityEffect {
+  resource: Resource;
+  before: number;
+  after: number;
+}
+
 export interface UpgradeEffects {
   converter: Converter;
   recipes: RecipeEffect[];
@@ -204,15 +222,20 @@ function applyRecipes(mode: 'by' | 'to', current: Recipe[], changes: Recipe[]): 
 }
 
 export class Upgrade {
+  readonly def: UpgradeDef;
   bought = false;
   costs: Cost[];
+  /** Storage limit increases. */
+  capacity: Cost[];
   requires: Upgrade[] = [];
   /** The converter whose panel lists this upgrade (null if it changes several). */
   host: Converter | null;
   private changes: Change[];
 
-  constructor(readonly def: UpgradeDef, game: Game) {
+  constructor(def: UpgradeDef, game: Game) {
+    this.def = def;
     this.costs = def.costs.map((c) => ({ resource: game.resource(c.res), amount: c.amount }));
+    this.capacity = (def.capacity ?? []).map((c) => ({ resource: game.resource(c.res), amount: c.amount }));
     this.changes = def.changes.map((c: ChangeDef) => ({
       converter: game.converter(c.converter),
       mode: c.mode,
@@ -220,7 +243,7 @@ export class Upgrade {
       makes: (c.makes ?? []).map((r) => game.recipe(r)),
       rename: c.rename,
     }));
-    this.host = this.changes.length === 1 ? this.changes[0].converter : null;
+    this.host = !def.building && this.changes.length === 1 ? this.changes[0].converter : null;
   }
 
   get id() { return this.def.id; }
@@ -253,7 +276,12 @@ export class Upgrade {
       applyRecipes(ch.mode, ch.converter.makes, ch.makes);
       if (ch.rename) ch.converter.name = ch.rename;
     }
+    for (const c of this.capacity) c.resource.max += c.amount;
     this.bought = true;
+  }
+
+  capacityEffects(): CapacityEffect[] {
+    return this.capacity.map((c) => ({ resource: c.resource, before: c.resource.max, after: c.resource.max + c.amount }));
   }
 
   /** What would change if bought now (computed on copies, nothing is modified). */
@@ -291,6 +319,8 @@ export class Game {
   readonly resources: Resource[];
   readonly converters: Converter[];
   readonly upgrades: Upgrade[];
+  /** Upgrades shown in the Build panel (not on a node). */
+  readonly buildings: Upgrade[];
   /** Converters the player has seen (once discovered, they stay visible). */
   readonly discovered = new Set<string>();
   /** Bought upgrade ids, in buying order (saved, replayed on load). */
@@ -321,6 +351,7 @@ export class Game {
       u.requires = (u.def.requires ?? []).map((id) => this.upgrade(id));
       u.host?.upgrades.push(u);
     }
+    this.buildings = this.upgrades.filter((u) => u.def.building);
 
     this.updateDiscovery();
   }

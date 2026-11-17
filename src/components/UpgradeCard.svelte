@@ -21,6 +21,7 @@
       })),
       requires: u.requires.map((r) => ({ name: r.name, ok: r.bought })),
       effects: u.def.final ? [] : u.effects(),
+      capacity: u.capacityEffects(),
     };
   });
 
@@ -51,6 +52,13 @@
     {#if upgrade.def.final}
       <li class="secret">Effect: ???</li>
     {/if}
+    {#each view.capacity as c}
+      <li>
+        <span class="icon">{c.resource.def.icon}</span>
+        {c.resource.name} storage {num(c.before)} → {num(c.after)}
+        <span class="tag good">▲</span>
+      </li>
+    {/each}
     {#each view.effects as fx}
       {#if fx.rename}
         <li>Renames <b>{fx.converter.name}</b> to <b>{fx.rename}</b></li>
@@ -59,6 +67,7 @@
         {@const better = r.kind === 'need' ? r.after.amount < r.before.amount : r.after.amount > r.before.amount}
         <li>
           <span class="icon">{r.resource.def.icon}</span>
+          {#if !upgrade.host}<b>{fx.converter.name}:</b>{/if}
           {r.resource.name} {line(r.kind, r.before.amount, r.after.amount)}
           {#if r.after.amount !== r.before.amount}
             <span class="tag" class:good={better} class:worse={!better}>{better ? '▲' : '▼'}</span>

@@ -1,8 +1,10 @@
-import type { GameData } from './defs';
+import type { GameData } from './defs.ts';
 
-// Game content. Rules and numbers are a 1:1 copy of legacy/core/data.py (v1.3.2);
-// tools/golden.py + the golden test verify that the port behaves identically.
+// Game content. Started as a 1:1 copy of legacy/core/data.py (v1.3.2).
+// v2 additions: storage buildings, house upgrades moved to the Build panel,
+// food gives Stamina (Eat fruit, Eat bread).
 // Visual-only fields: icon, color, group, hub, byproduct, region, x, y.
+// Balance check: `npm run sim` plays the game with bots and reports timings.
 
 export const DATA: GameData = {
   resources: [
@@ -85,7 +87,10 @@ export const DATA: GameData = {
         { res: 'fruit', amount: 1 },
         { res: 'dreaming', amount: 0, atMost: 0 },
       ],
-      makes: [{ res: 'seed', amount: 0.2 }],
+      makes: [
+        { res: 'seed', amount: 0.2 },
+        { res: 'stamina', amount: 1 },
+      ],
     },
     {
       id: 'garden', name: 'Garden', region: 'wilds', x: 810, y: 0,
@@ -197,6 +202,16 @@ export const DATA: GameData = {
       ],
       makes: [{ res: 'tool', amount: 1 }],
     },
+    {
+      // Only while awake, and only when it won't be wasted (Stamina ≤ 80).
+      id: 'eat_bread', name: 'Eat bread', region: 'home', x: -40, y: 330,
+      needs: [
+        { res: 'bread', amount: 1 },
+        { res: 'dreaming', amount: 0, atMost: 0 },
+        { res: 'stamina', amount: 0, atMost: 80 },
+      ],
+      makes: [{ res: 'stamina', amount: 20 }],
+    },
   ],
 
   upgrades: [
@@ -212,26 +227,70 @@ export const DATA: GameData = {
       changes: [{ converter: 'wake_up', mode: 'by', needs: [], makes: [] }],
     },
     {
-      id: 'shack', name: 'Shack',
+      id: 'shack', name: 'Shack', building: true,
       costs: [{ res: 'wood', amount: 25 }, { res: 'stamina', amount: 50 }],
       changes: [{ converter: 'sleep', mode: 'by', makes: [{ res: 'dreaming', amount: 5 }] }],
     },
     {
-      id: 'bed', name: 'Bed',
+      id: 'bed', name: 'Bed', building: true,
       costs: [{ res: 'wood', amount: 10 }, { res: 'fabric', amount: 25 }],
       changes: [{ converter: 'sleep', mode: 'by', makes: [{ res: 'dreaming', amount: 5 }] }],
     },
     {
-      id: 'small_house', name: 'Small house',
+      id: 'small_house', name: 'Small house', building: true,
       costs: [{ res: 'brick', amount: 25 }, { res: 'wood', amount: 50 }, { res: 'stamina', amount: 50 }],
       requires: ['shack', 'bed'],
       changes: [{ converter: 'sleep', mode: 'by', makes: [{ res: 'dreaming', amount: 15 }] }],
     },
     {
-      id: 'house', name: 'House',
+      id: 'house', name: 'House', building: true,
       costs: [{ res: 'brick', amount: 50 }, { res: 'wood', amount: 100 }, { res: 'stamina', amount: 80 }],
       requires: ['small_house'],
       changes: [{ converter: 'sleep', mode: 'by', makes: [{ res: 'dreaming', amount: 20 }] }],
+    },
+
+    // ---- Storage buildings (Build panel): raise storage limits
+    {
+      id: 'woodshed', name: 'Woodshed', building: true,
+      costs: [{ res: 'wood', amount: 40 }, { res: 'stamina', amount: 20 }],
+      changes: [],
+      capacity: [{ res: 'wood', amount: 100 }],
+    },
+    {
+      id: 'cistern', name: 'Cistern', building: true,
+      costs: [{ res: 'brick', amount: 20 }, { res: 'stamina', amount: 30 }],
+      changes: [],
+      capacity: [{ res: 'water', amount: 100 }],
+    },
+    {
+      id: 'brick_yard', name: 'Brick yard', building: true,
+      costs: [{ res: 'brick', amount: 30 }, { res: 'wood', amount: 20 }],
+      changes: [],
+      capacity: [{ res: 'brick', amount: 100 }, { res: 'clay', amount: 100 }],
+    },
+    {
+      id: 'pantry', name: 'Pantry', building: true,
+      costs: [{ res: 'wood', amount: 25 }, { res: 'brick', amount: 15 }],
+      changes: [],
+      capacity: [{ res: 'fruit', amount: 100 }, { res: 'bread', amount: 50 }],
+    },
+    {
+      id: 'granary', name: 'Granary', building: true,
+      costs: [{ res: 'wood', amount: 30 }, { res: 'brick', amount: 20 }],
+      changes: [],
+      capacity: [{ res: 'seed', amount: 100 }, { res: 'wheat', amount: 100 }, { res: 'flour', amount: 50 }],
+    },
+    {
+      id: 'weaving_room', name: 'Weaving room', building: true,
+      costs: [{ res: 'wood', amount: 30 }, { res: 'fabric', amount: 10 }],
+      changes: [],
+      capacity: [{ res: 'cotton', amount: 100 }, { res: 'fabric', amount: 50 }],
+    },
+    {
+      id: 'toolshed', name: 'Toolshed', building: true,
+      costs: [{ res: 'wood', amount: 40 }, { res: 'iron', amount: 5 }],
+      changes: [],
+      capacity: [{ res: 'tool', amount: 10 }, { res: 'iron', amount: 50 }, { res: 'iron_ore', amount: 100 }],
     },
     {
       id: 'built_road', name: 'Built road',

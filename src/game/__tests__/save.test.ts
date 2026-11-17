@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { Game } from '../engine';
-import { SAVE_KEY, clearSave, loadSave, serialize, writeSave, type KeyValueStore } from '../save';
+import { Game } from '../engine.ts';
+import { SAVE_KEY, clearSave, loadSave, serialize, writeSave, type KeyValueStore } from '../save.ts';
 
 function memoryStore(init: Record<string, string> = {}): KeyValueStore & { data: Record<string, string> } {
   const data = { ...init };

@@ -1,7 +1,7 @@
 // Save / load. Saves use stable ids (not display names), so renaming things in
 // data.ts doesn't break saves. Old v1.x (Brython) saves are migrated automatically.
 
-import type { Game } from './engine';
+import type { Game } from './engine.ts';
 
 export const SAVE_KEY = 'dynamic-entropy-save';
 const LEGACY_KEYS = ['save_version', 'save_resources', 'save_upgrades', 'save_playtime'];

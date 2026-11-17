@@ -5,6 +5,7 @@
   import GraphView from './components/GraphView.svelte';
   import NodeDrawer from './components/NodeDrawer.svelte';
   import ResourceDrawer from './components/ResourceDrawer.svelte';
+  import BuildingsDrawer from './components/BuildingsDrawer.svelte';
   import Modal from './components/Modal.svelte';
 
   // Load the save and start ticking before the graph mounts (so it can fit the view).
@@ -31,17 +32,19 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="app" class:has-drawer={ui.selected !== null || ui.selectedResource !== null}>
+<div class="app" class:has-drawer={ui.selected !== null || ui.selectedResource !== null || ui.showBuildings}>
   <div class="top"><TopBar /></div>
   <div class="resources" class:open={ui.showResources}><ResourcePanel /></div>
   <main class="graph"><GraphView /></main>
-  {#if ui.selected || ui.selectedResource}
+  {#if ui.selected || ui.selectedResource || ui.showBuildings}
     <div class="drawer">
-      {#key ui.selected ?? ui.selectedResource}
+      {#key ui.selected ?? ui.selectedResource ?? 'buildings'}
         {#if ui.selected}
           <NodeDrawer id={ui.selected} />
         {:else if ui.selectedResource}
           <ResourceDrawer id={ui.selectedResource} />
+        {:else}
+          <BuildingsDrawer />
         {/if}
       {/key}
     </div>
@@ -62,6 +65,8 @@
         <li><b>Nodes</b> turn resources into other resources, once every cycle (0.5 s). Their chips show what goes in <span class="muted">→</span> what comes out.</li>
         <li><b>Start / stop</b> a node by clicking the <b>colored strip</b> on its left side (or right-click it, or press Space when it's selected). <b>▶ all / ❚❚ all</b> next to an island's name switches the whole island.</li>
         <li><b>Click</b> a node to see its details and buy its <b>upgrades</b>. A glowing <span class="badge">⬆ 1</span> means you can afford one.</li>
+        <li><b>Build</b> (top bar) has your home and storage buildings: a better place to sleep, and room for more of each resource.</li>
+        <li><b>Eating</b> (fruit, bread) gives Stamina while you're awake.</li>
         <li>A node only works when it has enough input <span class="sw warn"></span>, and pauses when its outputs are full <span class="sw full"></span>.</li>
         <li><b>Lines</b> show resources flowing between nodes: the icon in the middle tells what flows, the arrow where. Lines of common resources (⚡ Stamina, 💧 Water, 🔥 Fire) only appear while you hover or select a node, to keep the map tidy.</li>
         <li><b>Hover a resource</b> (on the left, or any chip on a node) to light up who makes it <span class="ok">(green)</span> and who uses it <span class="bad">(red)</span>. <b>Click</b> it to see the full list, and start or stop those nodes from there.</li>

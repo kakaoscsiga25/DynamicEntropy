@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "golden": "python3 tools/golden.py > src/game/__tests__/golden.json"
+    "sim": "node src/sim/run.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.1.0",

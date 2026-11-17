@@ -36,6 +36,8 @@ export const ui = $state({
   playtime: 0,
   /** Mobile only: resource drawer open. */
   showResources: false,
+  /** The Build panel (buildings, not tied to a node) is open. */
+  showBuildings: false,
 });
 
 function refresh() {
@@ -166,12 +168,21 @@ export function setRegionRunning(region: string, on: boolean) {
 export function select(id: string | null) {
   ui.selected = id !== null && ui.selected === id ? null : id;
   ui.selectedResource = null;
+  ui.showBuildings = false;
+}
+
+/** Opens (or closes) the Build panel. */
+export function toggleBuildings() {
+  const open = !ui.showBuildings;
+  select(null);
+  ui.showBuildings = open;
 }
 
 /** Shows a resource's details: who makes it, who uses it. Selecting it again closes them. */
 export function selectResource(id: string) {
   ui.selectedResource = ui.selectedResource === id ? null : id;
   ui.selected = null;
+  ui.showBuildings = false;
   ui.showResources = false;
 }
 

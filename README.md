@@ -16,6 +16,7 @@ npm run dev        # dev server with hot reload: http://localhost:5173
 npm test           # unit tests (game logic, saves)
 npm run check      # TypeScript / Svelte type check
 npm run build      # production build into dist/
+npm run sim        # balance simulator (bots play the game, see below)
 ```
 
 Add `?dev` to the URL to get a 10× speed toggle in the top bar.
@@ -30,7 +31,8 @@ src/
     defs.ts          The shapes of that data, with comments explaining each field
     engine.ts        The simulation: ticks, recipes, upgrades, discovery
     save.ts          Save / load (localStorage), migration of v1 saves
-    __tests__/       Tests; golden.json = reference runs recorded from v1
+    __tests__/       Tests
+  sim/               Headless simulator + bots for balancing (npm run sim)
   ui/
     session.svelte.ts  Game loop, autosave, playtime, player actions, UI state
     layout.ts        Graph geometry: connection lines, island boxes
@@ -39,7 +41,6 @@ src/
   App.svelte         Page layout
 public/              Static files copied as-is (favicon, ending gif)
 legacy/              The original v1.3.2 Brython version (reference only)
-tools/golden.py      Records reference runs from legacy/ for the parity test
 ```
 
 ### Changing game content
@@ -48,9 +49,23 @@ Everything lives in `src/game/data.ts`. Converters run in the order they are
 listed (earlier ones get shared inputs first). `x`/`y` place the node on the map,
 `region` puts it on an island.
 
-The golden test (`src/game/__tests__/golden.test.ts`) checks that the game plays
-exactly like v1.3.2. Once the game rules or numbers are changed on purpose, that
-test is expected to fail: delete it (and `tools/golden.py`, `golden.json`) at that point.
+Upgrades marked `building: true` appear in the **Build** panel instead of on a
+node; `capacity` raises storage limits.
+
+### Balancing with the simulator
+
+```bash
+npm run sim                      # every bot, up to 24h of game time
+npm run sim -- --bot planner --full --hours 12
+```
+
+Bots play the game headlessly (thousands of times faster than real time) and
+report when they finished, the purchase timeline, how often each node was
+running / waiting (and for what), and how full each resource was. Run it after
+changing numbers in `data.ts`.
+
+(Until v2.0 the rules were verified to match v1.3.2 exactly by a "golden" replay
+test; it was retired when the rules started to change. See git history.)
 
 ## Releasing
 

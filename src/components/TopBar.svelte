@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { ui, save, setFast, APP_VERSION, DEV } from '../ui/session.svelte';
+  import { game, ui, save, setFast, toggleBuildings, APP_VERSION, DEV } from '../ui/session.svelte';
+
+  const buildable = $derived.by(() => {
+    ui.frame;
+    return game.buildings.filter((u) => u.isBuyable()).length;
+  });
   import { clock } from '../ui/format';
 </script>
 
@@ -21,6 +26,10 @@
   </div>
 
   <nav>
+    <button class="build" class:active={ui.showBuildings} onclick={toggleBuildings} title="Home and storage buildings">
+      🏠 Build
+      {#if buildable > 0}<span class="count">{buildable}</span>{/if}
+    </button>
     <button onclick={() => (ui.modal = 'howto')}><span class="long">How to play</span><span class="short">Help</span></button>
     <button onclick={() => save(true)}>Save</button>
     <button class="danger" onclick={() => (ui.modal = 'reset')}>Reset</button>
@@ -79,6 +88,18 @@
   }
   button:hover {
     border-color: var(--muted);
+  }
+  .build.active {
+    border-color: var(--upgrade);
+  }
+  .count {
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #10131f;
+    background: var(--upgrade);
   }
   .danger:hover {
     border-color: var(--bad);

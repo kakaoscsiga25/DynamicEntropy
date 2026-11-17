@@ -11,19 +11,27 @@ export function stock(x: number): string {
   return String(Math.floor(x + 1e-9));
 }
 
-export function rate(perSecond: number): string {
-  if (Math.abs(perSecond) < 0.005) return '';
-  const sign = perSecond > 0 ? '+' : '−';
-  return `${sign}${num(Math.abs(perSecond))}/s`;
+/** Whole units, for stock lists where numbers must not change length all the time. */
+export function whole(x: number): string {
+  return String(Math.max(0, Math.floor(x + 1e-9)));
 }
 
-export function duration(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${String(m % 60).padStart(2, '0')}m`;
+/** Always one decimal ("+1.2/s", "−15.0/s", "0.0/s"), so the decimal point stays in place. */
+export function rate(perSecond: number): string {
+  const a = Math.abs(perSecond);
+  if (a < 0.05) return '0.0/s';
+  const sign = perSecond > 0 ? '+' : '−';
+  return `${sign}${a >= 100 ? a.toFixed(0) : a.toFixed(1)}/s`;
+}
+
+/** Countdown as m:ss (or h:mm:ss): fixed length, unlike "45s" → "1m 05s". */
+export function countdown(seconds: number): string {
+  const s = Math.max(0, Math.ceil(seconds));
+  if (s >= 100 * 3600) return '99h+';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 export function clock(seconds: number): string {

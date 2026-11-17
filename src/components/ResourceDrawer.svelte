@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Converter, ConverterState } from '../game/engine';
   import { game, ui, select, toggleConverter, resourceTrend } from '../ui/session.svelte';
-  import { num, stock } from '../ui/format';
+  import { num } from '../ui/format';
   import { STATE_LABEL } from './states';
 
   let { id }: { id: string } = $props();
@@ -66,11 +66,9 @@
         amount: u.costs.find((k) => k.resource === r)!.amount,
       }));
 
-    const trend = resourceTrend(game.resources.indexOf(r));
     return {
-      amount: stock(r.amount),
+      amount: r.amount.toFixed(1),
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
-      trend,
       makers,
       users,
       hiddenMakers,
@@ -78,6 +76,12 @@
       upgrades,
       runningUsers: users.filter((u) => u.state !== 'stopped').length,
     };
+  });
+
+  // Once per second, so the numbers stay readable.
+  const trend = $derived.by(() => {
+    ui.second;
+    return resourceTrend(game.resources.indexOf(res));
   });
 </script>
 
@@ -129,8 +133,8 @@
   <div class="stock">
     <div class="numbers">
       <b>{view.amount}</b><span class="max">/ {res.max}</span>
-      <span class="rate {view.trend.direction}">{view.trend.text}</span>
-      <span class="eta">{view.trend.eta}</span>
+      <span class="rate {trend.direction}">{trend.text}</span>
+      <span class="eta">{trend.eta}</span>
     </div>
     <div class="bar"><div style="width: {view.ratio * 100}%"></div></div>
   </div>

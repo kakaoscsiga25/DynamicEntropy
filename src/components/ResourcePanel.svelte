@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { game, ui, resourceTrend, selectResource } from '../ui/session.svelte';
-  import { stock } from '../ui/format';
+  import { game, ui, resourceTrend, selectResource, type Trend } from '../ui/session.svelte';
+  import { whole } from '../ui/format';
 
+  // Stock and bars follow every tick.
   const groups = $derived.by(() => {
     ui.frame;
     const out: { name: string; rows: ReturnType<typeof row>[] }[] = [];
@@ -14,6 +15,14 @@
     return out;
   });
 
+  // Rates and countdowns change only once per second, so they are readable.
+  const trends = $derived.by(() => {
+    ui.second;
+    const map = new Map<string, Trend>();
+    game.resources.forEach((r, i) => map.set(r.id, resourceTrend(i)));
+    return map;
+  });
+
   function row(i: number) {
     const r = game.resources[i];
     return {
@@ -21,10 +30,10 @@
       name: r.name,
       icon: r.def.icon,
       color: r.def.color,
-      amount: stock(r.amount),
+      amount: whole(r.amount),
+      exact: r.amount.toFixed(2),
       max: r.max,
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
-      trend: resourceTrend(i),
     };
   }
 </script>
@@ -35,21 +44,22 @@
     <section>
       <h3>{g.name}</h3>
       {#each g.rows as r (r.id)}
+        {@const t = trends.get(r.id)}
         <button
           class="row"
           class:focused={ui.hoverResource === r.id}
           class:selected={ui.selectedResource === r.id}
-          title="Click to see who makes and uses {r.name}"
+          title="{r.name}: {r.exact} / {r.max}. Click to see who makes and uses it."
           onclick={() => selectResource(r.id)}
           onpointerenter={() => (ui.hoverResource = r.id)}
           onpointerleave={() => ui.hoverResource === r.id && (ui.hoverResource = null)}
         >
           <span class="icon">{r.icon}</span>
           <span class="name">{r.name}</span>
-          <span class="amount"><b>{r.amount}</b>/{r.max}</span>
+          <span class="amount"><b>{r.amount}</b><span class="max">/{r.max}</span></span>
           <span class="bar"><span style="width: {r.ratio * 100}%; background: {r.color}"></span></span>
-          <span class="rate {r.trend.direction}">{r.trend.text}</span>
-          <span class="eta">{r.trend.eta}</span>
+          <span class="eta">{t?.eta ?? ''}</span>
+          <span class="rate {t?.direction ?? ''}">{t?.text ?? ''}</span>
         </button>
       {/each}
     </section>
@@ -81,13 +91,17 @@
     color: var(--muted);
     opacity: 0.8;
   }
+  /*
+   * Fixed layout: numbers sit in right-aligned columns with equal-width digits
+   * and a fixed number of decimals, so nothing shifts while values change.
+   */
   .row {
     display: grid;
     grid-template-columns: 22px 1fr auto;
     grid-template-areas:
       'icon name amount'
       'icon bar bar'
-      'icon rate eta';
+      'icon eta rate';
     column-gap: 8px;
     row-gap: 3px;
     align-items: center;
@@ -99,6 +113,7 @@
     color: inherit;
     text-align: left;
     cursor: pointer;
+    font-variant-numeric: tabular-nums;
   }
   .row:hover,
   .row.focused {
@@ -118,16 +133,24 @@
     grid-area: name;
     font-size: 13px;
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .amount {
     grid-area: amount;
+    display: flex;
     font-size: 12px;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .amount b {
-    color: var(--text);
+    min-width: 3ch;
+    text-align: right;
     font-weight: 650;
+  }
+  .max {
+    min-width: 4ch;
+    color: var(--muted);
   }
   .bar {
     display: block;
@@ -147,23 +170,28 @@
     border-radius: 3px;
     transition: width 0.45s linear;
   }
+  .eta {
+    grid-area: eta;
+    min-height: 13px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
   .rate {
     grid-area: rate;
+    min-width: 7ch;
     font-size: 11px;
-    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
     color: var(--muted);
-    min-height: 13px;
+    opacity: 0.6;
   }
   .rate.up {
     color: var(--ok);
+    opacity: 1;
   }
   .rate.down {
     color: var(--bad);
-  }
-  .eta {
-    grid-area: eta;
-    font-size: 11px;
-    color: var(--muted);
-    text-align: right;
+    opacity: 1;
   }
 </style>

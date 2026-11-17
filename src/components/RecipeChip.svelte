@@ -1,0 +1,104 @@
+<script lang="ts" module>
+  import type { Recipe } from '../game/engine';
+  import { num } from '../ui/format';
+
+  /** Human readable explanation of a recipe line (used for tooltips and the details panel). */
+  export function recipeText(r: Recipe, side: 'in' | 'out'): string {
+    const name = r.resource.name;
+    if (side === 'out') return `${name}: makes ${num(r.amount)} per cycle`;
+    switch (r.kind) {
+      case 'consume':
+        return r.atLeast > r.amount
+          ? `${name}: uses ${num(r.amount)} per cycle, only while stock is at least ${num(r.atLeast)}`
+          : `${name}: uses ${num(r.amount)} per cycle`;
+      case 'catalyst':
+        return `${name}: needs at least ${num(r.atLeast)} in stock (not used up)`;
+      case 'condition':
+        return r.atMost === 0 ? `Only while ${name} is 0` : `Only while ${name} is at most ${num(r.atMost)}`;
+      default:
+        return name;
+    }
+  }
+</script>
+
+<script lang="ts">
+  let {
+    recipe,
+    side,
+    bad = false,
+    full = false,
+  }: { recipe: Recipe; side: 'in' | 'out'; bad?: boolean; full?: boolean } = $props();
+
+  const kind = $derived(side === 'out' ? 'out' : recipe.kind);
+</script>
+
+{#if kind !== 'none'}
+  <span
+    class="chip {kind}"
+    class:bad
+    class:full
+    style="--c: {recipe.resource.def.color}"
+    title={recipeText(recipe, side)}
+  >
+    <span class="icon">{recipe.resource.def.icon}</span>
+    {#if kind === 'catalyst'}
+      <span class="op">≥</span>{num(recipe.atLeast)}
+    {:else if kind === 'condition'}
+      <span class="op">{recipe.atMost === 0 ? '=' : '≤'}</span>{num(recipe.atMost)}
+    {:else}
+      {num(recipe.amount)}
+      {#if side === 'in' && recipe.atLeast > recipe.amount}
+        <span class="min">≥{num(recipe.atLeast)}</span>
+      {/if}
+    {/if}
+  </span>
+{/if}
+
+<style>
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 22px;
+    padding: 0 6px 0 4px;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--text);
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  }
+  .icon {
+    font-size: 13px;
+    line-height: 1;
+  }
+  .op,
+  .min {
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .min {
+    font-size: 10px;
+    margin-left: 2px;
+  }
+  .catalyst {
+    background: transparent;
+    border-style: dashed;
+  }
+  .condition {
+    background: transparent;
+    border-style: dotted;
+    color: var(--muted);
+  }
+  .bad {
+    border-color: var(--bad);
+    background: color-mix(in srgb, var(--bad) 22%, transparent);
+    box-shadow: 0 0 0 1px var(--bad);
+  }
+  .full {
+    border-color: var(--full);
+    box-shadow: 0 0 0 1px var(--full);
+  }
+</style>

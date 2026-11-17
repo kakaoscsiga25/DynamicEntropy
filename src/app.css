@@ -1,0 +1,43 @@
+/* Global design tokens. The game uses a single dark "night / dream" theme. */
+:root {
+  color-scheme: dark;
+  --bg: #0d0f1c;
+  --grid: #20254a;
+  --panel: #141729;
+  --panel-2: #1c2038;
+  --node-bg: #181c31;
+  --border: #2a2f54;
+  --text: #e8eaff;
+  --muted: #9399c6;
+
+  --ok: #4cd06d;
+  --warn: #f5b942;
+  --bad: #ff5d6c;
+  --full: #4ac7d0;
+  --stopped: #5d6286;
+  --upgrade: #8fd3ff;
+  --dream: #b48cff;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Color Emoji', sans-serif;
+  font-size: 14px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--upgrade);
+  outline-offset: 2px;
+}

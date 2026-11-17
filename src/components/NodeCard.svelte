@@ -12,7 +12,7 @@
   }: {
     conv: Converter;
     accent: string;
-    /** '', 'dim', 'producer', 'consumer' or 'both' (set by the graph when something is focused). */
+    /** '', 'dim', 'faint', 'producer', 'consumer' or 'both' (set by the graph when something is focused). */
     focus?: string;
   } = $props();
 
@@ -30,20 +30,26 @@
     };
   });
 
+  const running = $derived(view.state !== 'stopped');
+
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
     toggleConverter(conv.id);
   }
 
-  function onToggle(e: MouseEvent) {
+  function onPower(e: MouseEvent) {
     e.stopPropagation();
     toggleConverter(conv.id);
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (e.key === 'Enter') {
       e.preventDefault();
       select(conv.id);
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleConverter(conv.id);
     }
   }
 </script>
@@ -54,45 +60,49 @@
   style="left: {conv.def.x}px; top: {conv.def.y}px; width: {NODE_W}px; min-height: {NODE_H}px; --accent: {accent}"
   role="button"
   tabindex="0"
-  aria-label="{view.name}, {STATE_LABEL[view.state]}"
+  aria-label="{view.name}, {STATE_LABEL[view.state]}. Enter: details, Space: start or stop."
   onclick={() => select(conv.id)}
   onkeydown={onKey}
   oncontextmenu={onContextMenu}
   onpointerenter={() => (ui.hoverNode = conv.id)}
   onpointerleave={() => ui.hoverNode === conv.id && (ui.hoverNode = null)}
 >
-  <div class="head">
-    <span class="dot" title={STATE_LABEL[view.state]}></span>
-    <span class="name">{view.name}</span>
-    {#if view.buyable > 0}
-      <span class="badge ready" title="{view.buyable} upgrade(s) can be bought">⬆ {view.buyable}</span>
-    {:else if view.open > 0}
-      <span class="badge" title="{view.open} upgrade(s) available later">⬆ {view.open}</span>
-    {/if}
-    {#if conv.unstoppable}
-      <span class="toggle fixed" title="Always on, can't be stopped">∞</span>
-    {:else}
-      <button
-        class="toggle"
-        class:on={view.state !== 'stopped'}
-        title={view.state === 'stopped' ? 'Start (or right-click the node)' : 'Stop (or right-click the node)'}
-        aria-label={view.state === 'stopped' ? 'Start' : 'Stop'}
-        onclick={onToggle}
-      >
-        {view.state === 'stopped' ? '▶' : '❚❚'}
-      </button>
-    {/if}
-  </div>
-  <div class="io">
-    {#each view.needs as r (r)}
-      <RecipeChip recipe={r} side="in" bad={view.blocking.has(r)} />
-    {/each}
-    {#if view.makes.length > 0}
-      <span class="arrow">→</span>
-      {#each view.makes as r (r)}
-        <RecipeChip recipe={r} side="out" full={view.state === 'full'} />
+  <!-- The colored strip on the left is the on/off switch. -->
+  {#if conv.unstoppable}
+    <span class="power fixed" title="Always on, can't be stopped">∞</span>
+  {:else}
+    <button
+      class="power"
+      class:on={running}
+      tabindex="-1"
+      title={running ? `${STATE_LABEL[view.state]} · click to stop` : 'Stopped · click to start'}
+      aria-label={running ? 'Stop' : 'Start'}
+      onclick={onPower}
+    >
+      <span class="icon">{running ? '❚❚' : '▶'}</span>
+    </button>
+  {/if}
+
+  <div class="body">
+    <div class="head">
+      <span class="name">{view.name}</span>
+      {#if view.buyable > 0}
+        <span class="badge ready" title="{view.buyable} upgrade(s) can be bought">⬆ {view.buyable}</span>
+      {:else if view.open > 0}
+        <span class="badge" title="{view.open} upgrade(s) available later">⬆ {view.open}</span>
+      {/if}
+    </div>
+    <div class="io">
+      {#each view.needs as r (r)}
+        <RecipeChip recipe={r} side="in" bad={view.blocking.has(r)} />
       {/each}
-    {/if}
+      {#if view.makes.length > 0}
+        <span class="arrow">→</span>
+        {#each view.makes as r (r)}
+          <RecipeChip recipe={r} side="out" full={view.state === 'full'} />
+        {/each}
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -101,10 +111,6 @@
     position: absolute;
     box-sizing: border-box;
     display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 6px;
-    padding: 8px 8px 9px 12px;
     border-radius: 12px;
     background: var(--node-bg);
     border: 1px solid var(--border);
@@ -113,15 +119,6 @@
     user-select: none;
     transition: opacity 0.15s, border-color 0.15s, box-shadow 0.15s;
     overflow: hidden;
-  }
-  /* State color bar on the left */
-  .node::before {
-    content: '';
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 4px;
-    background: var(--state);
-    transition: background 0.2s;
   }
   .node:hover,
   .node:focus-visible {
@@ -134,6 +131,9 @@
   }
   .node.dim {
     opacity: 0.28;
+  }
+  .node.faint {
+    opacity: 0.55;
   }
   .node.producer {
     box-shadow: 0 0 0 2px var(--ok), 0 0 18px color-mix(in srgb, var(--ok) 45%, transparent);
@@ -150,21 +150,56 @@
   .state-noInput { --state: var(--warn); }
   .state-full { --state: var(--full); }
 
+  /* ---- on/off strip */
+  .power {
+    flex: none;
+    width: 30px;
+    padding: 0;
+    border: none;
+    border-right: 1px solid color-mix(in srgb, var(--state) 40%, transparent);
+    background: color-mix(in srgb, var(--state) 22%, transparent);
+    color: var(--state);
+    font-size: 11px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background 0.15s, color 0.15s;
+  }
+  .power:hover {
+    background: color-mix(in srgb, var(--state) 45%, transparent);
+    color: var(--text);
+  }
+  .power.on .icon {
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .state-stopped .power {
+    color: var(--muted);
+  }
+  .state-stopped .power:hover {
+    background: color-mix(in srgb, var(--ok) 35%, transparent);
+    color: var(--text);
+  }
+  .power.fixed {
+    cursor: default;
+    font-size: 15px;
+    color: var(--dream);
+  }
+
+  /* ---- content */
+  .body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px 8px 9px 9px;
+  }
   .head {
     display: flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
-  }
-  .dot {
-    flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--state);
-  }
-  .state-ok .dot {
-    animation: pulse 1s ease-in-out infinite;
   }
   .name {
     flex: 1;
@@ -193,52 +228,34 @@
     border-color: var(--upgrade);
     box-shadow: 0 0 10px color-mix(in srgb, var(--upgrade) 60%, transparent);
   }
-  .toggle {
-    flex: none;
-    width: 24px;
-    height: 22px;
-    padding: 0;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--panel-2);
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1;
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-  }
-  .toggle:hover {
-    color: var(--text);
-    border-color: var(--muted);
-  }
-  .toggle.on {
-    color: var(--ok);
-  }
-  .toggle.fixed {
-    cursor: default;
-    font-size: 14px;
-    color: var(--dream);
-  }
   .io {
     display: flex;
     align-items: center;
     gap: 3px;
     flex-wrap: wrap;
   }
+  .arrow {
+    color: var(--muted);
+    margin: 0 1px;
+    font-size: 12px;
+  }
 
-  /* Overview ("far") zoom: no chips, big names, state shown as card color. */
+  /* ---- Overview ("far") zoom: no chips, big names, state shown as card color. */
   :global(.far) .node {
-    justify-content: center;
     background: color-mix(in srgb, var(--state) 16%, var(--node-bg));
     border-color: color-mix(in srgb, var(--state) 45%, var(--border));
   }
-  :global(.far) .node::before {
-    width: 6px;
+  :global(.far) .power {
+    width: 46px;
+    font-size: 18px;
   }
-  :global(.far) .io,
-  :global(.far) .toggle,
-  :global(.far) .dot {
+  :global(.far) .power.fixed {
+    font-size: 24px;
+  }
+  :global(.far) .body {
+    justify-content: center;
+  }
+  :global(.far) .io {
     display: none;
   }
   :global(.far) .name {
@@ -247,25 +264,18 @@
     white-space: normal;
     text-align: center;
   }
-  :global(.far) .state-stopped .name {
-    color: var(--muted);
-  }
   :global(.far) .badge {
     font-size: 16px;
     padding: 2px 8px;
   }
-  .arrow {
-    color: var(--muted);
-    margin: 0 1px;
-    font-size: 12px;
-  }
+
   @keyframes pulse {
     50% {
-      opacity: 0.35;
+      opacity: 0.45;
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .state-ok .dot {
+    .power.on .icon {
       animation: none;
     }
   }

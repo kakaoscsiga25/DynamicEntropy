@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { game, ui, select } from '../ui/session.svelte';
+  import { game, ui, select, setRegionRunning } from '../ui/session.svelte';
   import { NODE_H, NODE_W, buildEdges, neighborMap, regionBoxes, worldBounds, type Edge } from '../ui/layout';
   import NodeCard from './NodeCard.svelte';
 
@@ -20,14 +20,25 @@
     ui.frame;
     return game.converters.filter((c) => game.discovered.has(c.id));
   });
-  const boxes = $derived(regionBoxes(game, discovered));
+  const boxes = $derived(
+    regionBoxes(game, discovered).map((b) => ({
+      ...b,
+      stoppable: discovered.filter((c) => c.def.region === b.id && !c.unstoppable).length,
+    })),
+  );
 
   // ------------------------------------------------------------ focus / highlight
 
-  /** Hovering a resource beats hovering a node. (Selecting only highlights the node's lines.) */
+  /**
+   * What the map is focused on. Hovering is a "strong" focus (dims everything
+   * unrelated); a selection is a "weak" one (only highlights).
+   */
   const focus = $derived.by(() => {
-    if (ui.hoverResource) return { kind: 'res' as const, id: ui.hoverResource };
-    return ui.hoverNode ? { kind: 'node' as const, id: ui.hoverNode } : null;
+    if (ui.hoverResource) return { kind: 'res' as const, id: ui.hoverResource, strong: true };
+    if (ui.hoverNode) return { kind: 'node' as const, id: ui.hoverNode, strong: true };
+    if (ui.selectedResource) return { kind: 'res' as const, id: ui.selectedResource, strong: false };
+    if (ui.selected) return { kind: 'node' as const, id: ui.selected, strong: false };
+    return null;
   });
 
   const nodeFocus = $derived.by(() => {
@@ -37,11 +48,12 @@
     for (const c of discovered) {
       if (focus.kind === 'node') {
         const related = c.id === focus.id || neighbors.get(focus.id)?.has(c.id);
-        map.set(c.id, related ? '' : 'dim');
+        map.set(c.id, related || !focus.strong ? '' : 'dim');
       } else {
         const uses = c.needs.some((n) => n.resource.id === focus.id && n.kind !== 'none');
         const makes = c.makes.some((m) => m.resource.id === focus.id && m.amount > 0);
-        map.set(c.id, uses && makes ? 'both' : uses ? 'consumer' : makes ? 'producer' : 'dim');
+        const cls = uses && makes ? 'both' : uses ? 'consumer' : makes ? 'producer' : focus.strong ? 'dim' : 'faint';
+        map.set(c.id, cls);
       }
     }
     return map;
@@ -55,19 +67,18 @@
     return e.from.state === 'ok';
   }
 
+  function related(e: Edge): boolean {
+    if (!focus) return false;
+    return focus.kind === 'node' ? e.from.id === focus.id || e.to.id === focus.id : e.resource.id === focus.id;
+  }
+
   const visibleEdges = $derived.by(() => {
     ui.frame;
     return edges
       .filter((e) => game.discovered.has(e.from.id) && game.discovered.has(e.to.id))
+      .filter((e) => !e.onDemand || related(e))
       .map((e) => {
-        let emphasis = '';
-        if (!focus && ui.selected) {
-          emphasis = e.from.id === ui.selected || e.to.id === ui.selected ? 'hi' : '';
-        } else if (focus?.kind === 'node') {
-          emphasis = e.from.id === focus.id || e.to.id === focus.id ? 'hi' : 'lo';
-        } else if (focus?.kind === 'res') {
-          emphasis = e.resource.id === focus.id ? 'hi' : 'lo';
-        }
+        const emphasis = !focus ? '' : related(e) ? 'hi' : focus.strong ? 'lo' : '';
         return { e, active: edgeActive(e), emphasis };
       });
   });
@@ -90,7 +101,7 @@
   }
 
   function onPointerDown(e: PointerEvent) {
-    if ((e.target as Element).closest('.node, .controls, .legend')) return;
+    if ((e.target as Element).closest('.node, .controls, .legend, .rbtn')) return;
     viewport.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     dragDistance = 0;
@@ -193,19 +204,37 @@
         class="region"
         style="left: {r.x}px; top: {r.y}px; width: {r.w}px; height: {r.h}px; --rc: {r.color}"
       >
-        <span class="region-name">{r.name}</span>
+        <div class="region-head">
+          <span class="region-name">{r.name}</span>
+          {#if r.stoppable > 0}
+            <button class="rbtn" title="Start every node on {r.name}" onclick={() => setRegionRunning(r.id, true)}>▶ all</button>
+            <button class="rbtn" title="Stop every node on {r.name}" onclick={() => setRegionRunning(r.id, false)}>❚❚ all</button>
+          {/if}
+        </div>
       </div>
     {/each}
 
     <svg class="edges" width="1" height="1" aria-hidden="true">
       {#each visibleEdges as { e, active, emphasis } (e.id)}
-        <g class="edge {emphasis}" class:active class:catalyst={e.catalyst} style="--c: {e.resource.def.color}">
+        <g
+          class="edge {emphasis}"
+          class:active
+          class:catalyst={e.catalyst}
+          class:ondemand={e.onDemand}
+          style="--c: {e.resource.def.color}"
+        >
           <path class="line" d={e.d} />
           {#if active && !e.catalyst}
             <path class="flow" d={e.d} />
           {/if}
-          <circle cx={e.start[0]} cy={e.start[1]} r="3.5" />
-          <circle cx={e.end[0]} cy={e.end[1]} r="3.5" />
+          <circle class="port" cx={e.start[0]} cy={e.start[1]} r="3.5" />
+          <polygon class="arrow" points={e.arrow} />
+          <g transform="translate({e.mid[0]} {e.mid[1]})">
+            <g class="tag">
+              <circle r="11" />
+              <text text-anchor="middle" dominant-baseline="central" y="1">{e.resource.def.icon}</text>
+            </g>
+          </g>
         </g>
       {/each}
     </svg>
@@ -229,6 +258,8 @@
     <span class="sep"></span>
     <span><i class="ln"></i>Flow</span>
     <span><i class="ln dashed"></i>Needs stock</span>
+    <span class="sep"></span>
+    <span>⚡💧🔥 lines appear on hover</span>
   </div>
 </div>
 
@@ -261,20 +292,49 @@
     animation: reveal 0.6s ease-out;
     transition: left 0.4s, top 0.4s, width 0.4s, height 0.4s;
   }
-  .region-name {
+  .region-head {
     position: absolute;
     left: 18px;
-    top: 9px;
+    top: 7px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .region-name {
+    margin-right: 4px;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--rc) 75%, var(--text));
   }
+  .rbtn {
+    padding: 1px 7px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--rc) 30%, transparent);
+    background: transparent;
+    color: color-mix(in srgb, var(--rc) 60%, var(--muted));
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.75;
+  }
+  .rbtn:hover {
+    opacity: 1;
+    color: var(--text);
+    background: color-mix(in srgb, var(--rc) 22%, transparent);
+  }
+  .far .region-head {
+    top: -40px;
+    left: 8px;
+    gap: 10px;
+  }
   .far .region-name {
     font-size: 22px;
-    top: -34px;
-    left: 8px;
+  }
+  .far .rbtn {
+    font-size: 16px;
+    padding: 2px 10px;
+    border-radius: 8px;
   }
   .edges {
     position: absolute;
@@ -317,8 +377,23 @@
     opacity: 0.8;
     animation: flow 0.9s linear infinite;
   }
-  .edge circle {
+  .port,
+  .arrow {
     fill: var(--c);
+  }
+  .tag circle {
+    fill: var(--node-bg);
+    stroke: var(--c);
+    stroke-width: 1.5;
+  }
+  .tag text {
+    font-size: 12px;
+  }
+  .far .tag {
+    transform: scale(1.7);
+  }
+  .ondemand .line {
+    stroke-width: 1.5;
   }
   .controls {
     position: absolute;

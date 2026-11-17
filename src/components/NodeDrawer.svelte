@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { game, ui, select, toggleConverter } from '../ui/session.svelte';
+  import { game, ui, select, selectResource, toggleConverter } from '../ui/session.svelte';
   import { num, stock } from '../ui/format';
   import { TICK_MS, TICKS_PER_SECOND, type Recipe } from '../game/engine';
   import { recipeText } from './RecipeChip.svelte';
@@ -16,6 +16,7 @@
     const c = conv;
     const blocking = c.state === 'noInput' ? c.blockingNeeds() : [];
     const res = (r: Recipe) => ({
+      id: r.resource.id,
       icon: r.resource.def.icon,
       name: r.resource.name,
       color: r.resource.def.color,
@@ -81,14 +82,15 @@
   </div>
 
   <section>
-    <h3>Recipe <small>per cycle · 1 cycle = {TICK_MS / 1000}s</small></h3>
+    <h3>Recipe <small>1 cycle = {TICK_MS / 1000}s · click a resource for details</small></h3>
     <table>
       <thead>
         <tr><th></th><th></th><th>cycle</th><th>per sec</th><th>stock</th></tr>
       </thead>
       <tbody>
         {#each view.inputs as r}
-          <tr class:bad={!r.ok}>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <tr class:bad={!r.ok} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
             <td>{r.name}{#if r.atLeast > r.amount}<span class="sub"> · min. stock {num(r.atLeast)}</span>{/if}</td>
             <td class="num neg">−{num(r.amount)}</td>
@@ -97,7 +99,8 @@
           </tr>
         {/each}
         {#each view.catalysts as r}
-          <tr class:bad={!r.ok} title={r.text}>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <tr class:bad={!r.ok} title={r.text} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
             <td>{r.name}<span class="sub"> · needs ≥{num(r.atLeast)}, not used</span></td>
             <td class="num">0</td>
@@ -106,7 +109,8 @@
           </tr>
         {/each}
         {#each view.outputs as r}
-          <tr class="out" class:full={!r.ok}>
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <tr class="out" class:full={!r.ok} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
             <td>{r.name}</td>
             <td class="num pos">+{num(r.amount)}</td>
@@ -299,6 +303,12 @@
   .sub {
     color: var(--muted);
     font-size: 11.5px;
+  }
+  tbody tr {
+    cursor: pointer;
+  }
+  tbody tr:hover td {
+    background: var(--panel-2);
   }
   tr.bad td {
     background: color-mix(in srgb, var(--bad) 14%, transparent);

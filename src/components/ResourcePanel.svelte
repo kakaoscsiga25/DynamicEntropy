@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { game, ui, ratePerSecond } from '../ui/session.svelte';
-  import { duration, rate, stock } from '../ui/format';
+  import { game, ui, resourceTrend, selectResource } from '../ui/session.svelte';
+  import { stock } from '../ui/format';
 
   const groups = $derived.by(() => {
     ui.frame;
@@ -16,11 +16,6 @@
 
   function row(i: number) {
     const r = game.resources[i];
-    const perSec = ratePerSecond(i);
-    let eta = '';
-    if (perSec > 0.005 && r.amount < r.max - 1e-9) eta = `full in ${duration((r.max - r.amount) / perSec)}`;
-    else if (perSec < -0.005 && r.amount > 1e-9) eta = `empty in ${duration(r.amount / -perSec)}`;
-    else if (r.amount >= r.max - 1e-9) eta = 'full';
     return {
       id: r.id,
       name: r.name,
@@ -29,9 +24,7 @@
       amount: stock(r.amount),
       max: r.max,
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
-      rate: rate(perSec),
-      trend: perSec > 0.005 ? 'up' : perSec < -0.005 ? 'down' : '',
-      eta,
+      trend: resourceTrend(i),
     };
   }
 </script>
@@ -42,21 +35,22 @@
     <section>
       <h3>{g.name}</h3>
       {#each g.rows as r (r.id)}
-        <div
+        <button
           class="row"
           class:focused={ui.hoverResource === r.id}
-          role="listitem"
-          title="Hover to see which nodes make (green) and use (red) {r.name}"
+          class:selected={ui.selectedResource === r.id}
+          title="Click to see who makes and uses {r.name}"
+          onclick={() => selectResource(r.id)}
           onpointerenter={() => (ui.hoverResource = r.id)}
           onpointerleave={() => ui.hoverResource === r.id && (ui.hoverResource = null)}
         >
           <span class="icon">{r.icon}</span>
           <span class="name">{r.name}</span>
           <span class="amount"><b>{r.amount}</b>/{r.max}</span>
-          <div class="bar"><div style="width: {r.ratio * 100}%; background: {r.color}"></div></div>
-          <span class="rate {r.trend}">{r.rate}</span>
-          <span class="eta">{r.eta}</span>
-        </div>
+          <span class="bar"><span style="width: {r.ratio * 100}%; background: {r.color}"></span></span>
+          <span class="rate {r.trend.direction}">{r.trend.text}</span>
+          <span class="eta">{r.trend.eta}</span>
+        </button>
       {/each}
     </section>
   {/each}
@@ -97,13 +91,22 @@
     column-gap: 8px;
     row-gap: 3px;
     align-items: center;
+    width: 100%;
     padding: 6px 8px;
+    border: 1px solid transparent;
     border-radius: 9px;
-    cursor: default;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
   }
   .row:hover,
   .row.focused {
     background: var(--panel-2);
+  }
+  .row.selected {
+    background: var(--panel-2);
+    border-color: var(--border);
   }
   .icon {
     grid-area: icon;
@@ -127,6 +130,7 @@
     font-weight: 650;
   }
   .bar {
+    display: block;
     grid-area: bar;
     height: 5px;
     border-radius: 3px;
@@ -137,7 +141,8 @@
   .row.focused .bar {
     background: var(--bg);
   }
-  .bar div {
+  .bar span {
+    display: block;
     height: 100%;
     border-radius: 3px;
     transition: width 0.45s linear;

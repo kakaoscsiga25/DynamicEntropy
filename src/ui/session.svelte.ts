@@ -2,6 +2,7 @@
 // playtime, autosave and player actions. Components import from here.
 
 import { Game, TICK_MS, TICKS_PER_SECOND } from '../game/engine';
+import { duration, rate } from './format';
 import { clearSave, loadSave, serialize, writeSave, type KeyValueStore } from '../game/save';
 
 export const APP_VERSION = __APP_VERSION__;
@@ -19,7 +20,10 @@ export const ui = $state({
    * (not reactive), so components read `ui.frame` to know when to re-read them.
    */
   frame: 0,
+  /** Selected node (converter) id: its details are shown in the side panel. */
   selected: null as string | null,
+  /** Selected resource id: its details are shown in the side panel. */
+  selectedResource: null as string | null,
   hoverNode: null as string | null,
   hoverResource: null as string | null,
   modal: null as ModalKind,
@@ -56,6 +60,30 @@ export function ratePerSecond(index: number): number {
   let sum = 0;
   for (const h of history) sum += h[index];
   return (sum / history.length) * TICKS_PER_SECOND;
+}
+
+export interface Trend {
+  perSecond: number;
+  /** "+1.2/s", or '' when not changing. */
+  text: string;
+  direction: 'up' | 'down' | '';
+  /** "full in 12s", "empty in 3m 05s", "full" or ''. */
+  eta: string;
+}
+
+export function resourceTrend(index: number): Trend {
+  const r = game.resources[index];
+  const perSecond = ratePerSecond(index);
+  let eta = '';
+  if (perSecond > 0.005 && r.amount < r.max - 1e-9) eta = `full in ${duration((r.max - r.amount) / perSecond)}`;
+  else if (perSecond < -0.005 && r.amount > 1e-9) eta = `empty in ${duration(r.amount / -perSecond)}`;
+  else if (r.amount >= r.max - 1e-9) eta = 'full';
+  return {
+    perSecond,
+    text: rate(perSecond),
+    direction: perSecond > 0.005 ? 'up' : perSecond < -0.005 ? 'down' : '',
+    eta,
+  };
 }
 
 // ------------------------------------------------------------ loop
@@ -127,8 +155,27 @@ export function buyUpgrade(id: string) {
   else toast(`Bought: ${u.name}`);
 }
 
+/** Starts or stops every discovered node of an island (unstoppable ones are skipped). */
+export function setRegionRunning(region: string, on: boolean) {
+  for (const c of game.converters) {
+    if (c.def.region !== region || c.unstoppable || !game.discovered.has(c.id)) continue;
+    if (on && c.stopped) c.start();
+    else if (!on) c.stop();
+  }
+  refresh();
+}
+
+/** Shows a node's details. Selecting the same node again (or null) closes the side panel. */
 export function select(id: string | null) {
-  ui.selected = id;
+  ui.selected = id !== null && ui.selected === id ? null : id;
+  ui.selectedResource = null;
+}
+
+/** Shows a resource's details: who makes it, who uses it. Selecting it again closes them. */
+export function selectResource(id: string) {
+  ui.selectedResource = ui.selectedResource === id ? null : id;
+  ui.selected = null;
+  ui.showResources = false;
 }
 
 // ------------------------------------------------------------ start

@@ -22,6 +22,8 @@
 </script>
 
 <script lang="ts">
+  import { ui, selectResource } from '../ui/session.svelte';
+
   let {
     recipe,
     side,
@@ -30,15 +32,27 @@
   }: { recipe: Recipe; side: 'in' | 'out'; bad?: boolean; full?: boolean } = $props();
 
   const kind = $derived(side === 'out' ? 'out' : recipe.kind);
+  const id = $derived(recipe.resource.id);
+
+  function onClick(e: MouseEvent) {
+    e.stopPropagation(); // don't also select the node
+    selectResource(id);
+  }
 </script>
 
 {#if kind !== 'none'}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <span
     class="chip {kind}"
     class:bad
     class:full
     style="--c: {recipe.resource.def.color}"
-    title={recipeText(recipe, side)}
+    title="{recipeText(recipe, side)} · click for details"
+    role="button"
+    tabindex="-1"
+    onclick={onClick}
+    onpointerenter={() => (ui.hoverResource = id)}
+    onpointerleave={() => ui.hoverResource === id && (ui.hoverResource = null)}
   >
     <span class="icon">{recipe.resource.def.icon}</span>
     {#if kind === 'catalyst'}
@@ -69,6 +83,11 @@
     color: var(--text);
     background: color-mix(in srgb, var(--c) 18%, transparent);
     border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .chip:hover {
+    background: color-mix(in srgb, var(--c) 38%, transparent);
   }
   .icon {
     font-size: 13px;

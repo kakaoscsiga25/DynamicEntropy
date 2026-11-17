@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { ui, start, select, resetGame } from './ui/session.svelte';
+  import { ui, start, select, resetGame, toggleConverter, game } from './ui/session.svelte';
   import TopBar from './components/TopBar.svelte';
   import ResourcePanel from './components/ResourcePanel.svelte';
   import GraphView from './components/GraphView.svelte';
   import NodeDrawer from './components/NodeDrawer.svelte';
+  import ResourceDrawer from './components/ResourceDrawer.svelte';
   import Modal from './components/Modal.svelte';
 
   // Load the save and start ticking before the graph mounts (so it can fit the view).
@@ -14,23 +15,34 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key !== 'Escape') return;
-    if (ui.modal) closeModal();
-    else if (ui.showResources) ui.showResources = false;
-    else select(null);
+    if (e.key === 'Escape') {
+      if (ui.modal) closeModal();
+      else if (ui.showResources) ui.showResources = false;
+      else select(null);
+    } else if (e.key === ' ' && ui.selected && !ui.modal) {
+      // Space starts / stops the selected node (unless a button or input has focus).
+      const t = e.target as HTMLElement;
+      if (t.closest('button, input, textarea, select')) return;
+      e.preventDefault();
+      if (!game.converter(ui.selected).unstoppable) toggleConverter(ui.selected);
+    }
   }
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-<div class="app" class:has-drawer={ui.selected !== null}>
+<div class="app" class:has-drawer={ui.selected !== null || ui.selectedResource !== null}>
   <div class="top"><TopBar /></div>
   <div class="resources" class:open={ui.showResources}><ResourcePanel /></div>
   <main class="graph"><GraphView /></main>
-  {#if ui.selected}
+  {#if ui.selected || ui.selectedResource}
     <div class="drawer">
-      {#key ui.selected}
-        <NodeDrawer id={ui.selected} />
+      {#key ui.selected ?? ui.selectedResource}
+        {#if ui.selected}
+          <NodeDrawer id={ui.selected} />
+        {:else if ui.selectedResource}
+          <ResourceDrawer id={ui.selectedResource} />
+        {/if}
       {/key}
     </div>
   {/if}
@@ -48,11 +60,11 @@
       <p class="lead">You are dreaming. Build up your dream world until you can finally <b>wake up</b>.</p>
       <ul>
         <li><b>Nodes</b> turn resources into other resources, once every cycle (0.5 s). Their chips show what goes in <span class="muted">→</span> what comes out.</li>
+        <li><b>Start / stop</b> a node by clicking the <b>colored strip</b> on its left side (or right-click it, or press Space when it's selected). <b>▶ all / ❚❚ all</b> next to an island's name switches the whole island.</li>
         <li><b>Click</b> a node to see its details and buy its <b>upgrades</b>. A glowing <span class="badge">⬆ 1</span> means you can afford one.</li>
-        <li><b>Start / stop</b> a node with its ▶ button, or right-click it.</li>
         <li>A node only works when it has enough input <span class="sw warn"></span>, and pauses when its outputs are full <span class="sw full"></span>.</li>
-        <li><b>Lines</b> show resources flowing between nodes. Common resources (⚡ Stamina, 💧 Water, 🔥 Fire) are shown only as chips, to keep the map tidy.</li>
-        <li><b>Hover a resource</b> on the left to light up who makes it <span class="ok">(green)</span> and who uses it <span class="bad">(red)</span>.</li>
+        <li><b>Lines</b> show resources flowing between nodes: the icon in the middle tells what flows, the arrow where. Lines of common resources (⚡ Stamina, 💧 Water, 🔥 Fire) only appear while you hover or select a node, to keep the map tidy.</li>
+        <li><b>Hover a resource</b> (on the left, or any chip on a node) to light up who makes it <span class="ok">(green)</span> and who uses it <span class="bad">(red)</span>. <b>Click</b> it to see the full list, and start or stop those nodes from there.</li>
         <li><b>Drag</b> the background to move around, <b>scroll</b> or pinch to zoom.</li>
         <li>When nothing seems to work, try twiddling your thumbs to lose your Stamina and fall asleep.</li>
       </ul>

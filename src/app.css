@@ -31,6 +31,9 @@ body {
   background: var(--bg);
   color: var(--text);
   overscroll-behavior: none;
+  /* A game: clicking around quickly must not select (highlight) text. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button {

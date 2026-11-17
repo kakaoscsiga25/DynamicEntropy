@@ -42,6 +42,12 @@ export interface ConverterDef {
   y: number;
   /** Can't be stopped, starts running on its own. */
   unstoppable?: boolean;
+  /**
+   * Output grows with the stock of a resource above this node's minimum
+   * (its `atLeast` for that resource), up to a cap ("size").
+   * Byproducts and inputs don't change.
+   */
+  growth?: GrowthDef;
   needs: RecipeDef[];
   makes: RecipeDef[];
 }
@@ -57,6 +63,17 @@ export interface ChangeDef {
   needs?: RecipeDef[];
   makes?: RecipeDef[];
   rename?: string;
+  /** Changes the growth cap (size) of the converter: added for 'by', set for 'to'. */
+  growthMax?: number;
+}
+
+export interface GrowthDef {
+  /** The resource whose stock drives the output (e.g. Seed for fields, Plant for the Forest). */
+  res: string;
+  /** Extra output per unit of stock above the minimum, as a fraction of the base (0.1 = +10%). */
+  perUnit: number;
+  /** The output is at most this many times the base ("field size"). */
+  maxFactor: number;
 }
 
 export interface CostDef {

@@ -25,6 +25,7 @@
       needs: [...conv.needs],
       makes: [...conv.makes],
       blocking: new Set<Recipe>(conv.state === 'noInput' ? conv.blockingNeeds() : []),
+      factor: conv.growthFactor(),
       buyable: conv.upgrades.filter((u) => u.isBuyable()).length,
       open: conv.upgrades.filter((u) => !u.bought).length,
     };
@@ -86,6 +87,14 @@
   <div class="body">
     <div class="head">
       <span class="name">{view.name}</span>
+      {#if conv.growth}
+        <span
+          class="growth"
+          class:max={view.factor >= conv.growth.maxFactor - 1e-9}
+          title="Output ×{view.factor.toFixed(1)} (max ×{conv.growth.maxFactor}): grows with {conv.growth.resource.name} above {conv.growthThreshold()}"
+          >×{view.factor.toFixed(1)}</span
+        >
+      {/if}
       {#if view.buyable > 0}
         <span class="badge ready" title="{view.buyable} upgrade(s) can be bought">⬆ {view.buyable}</span>
       {:else if view.open > 0}
@@ -99,7 +108,12 @@
       {#if view.makes.length > 0}
         <span class="arrow">→</span>
         {#each view.makes as r (r)}
-          <RecipeChip recipe={r} side="out" full={view.state === 'full'} />
+          <RecipeChip
+            recipe={r}
+            side="out"
+            full={view.state === 'full'}
+            value={conv.growth && !r.byproduct ? conv.output(r, view.factor) : undefined}
+          />
         {/each}
       {/if}
     </div>
@@ -212,6 +226,21 @@
   }
   .state-stopped .name {
     color: var(--muted);
+  }
+  .growth {
+    flex: none;
+    min-width: 3.2ch;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: #a8f0bc;
+  }
+  .growth.max {
+    color: var(--ok);
+  }
+  :global(.far) .growth {
+    font-size: 16px;
   }
   .badge {
     flex: none;

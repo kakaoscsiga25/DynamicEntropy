@@ -34,9 +34,22 @@
       conditions: c.needs.filter((r) => r.kind === 'condition').map(res),
       outputs: c.makes.map((r) => ({
         ...res(r),
-        amount: r.amount,
+        amount: c.output(r),
+        base: r.amount,
+        grows: !!c.growth && !r.byproduct,
         ok: r.resource.amount < r.resource.max,
       })),
+      growth: c.growth
+        ? {
+            factor: c.growthFactor(),
+            max: c.growth.maxFactor,
+            resource: c.growth.resource,
+            threshold: c.growthThreshold(),
+            perUnit: c.growth.perUnit,
+            fullAt: c.growthFullAt(),
+            stock: c.growth.resource.amount,
+          }
+        : null,
       available: c.upgrades.filter((u) => !u.bought && u.requirementsMet()),
       locked: c.upgrades.filter((u) => !u.bought && !u.requirementsMet()),
       owned: c.upgrades.filter((u) => u.bought),
@@ -113,8 +126,8 @@
           <tr class="out" class:full={!r.ok} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
             <td>{r.name}</td>
-            <td class="num pos">+{num(r.amount)}</td>
-            <td class="num rate">{num(r.amount * TICKS_PER_SECOND)}/s</td>
+            <td class="num pos" title={r.grows ? `base ${num(r.base)} × growth` : ''}>+{r.grows ? r.amount.toFixed(1) : num(r.amount)}</td>
+            <td class="num rate">{r.grows ? (r.amount * TICKS_PER_SECOND).toFixed(1) : num(r.amount * TICKS_PER_SECOND)}/s</td>
             <td class="num stock">{r.stock}/{r.max}</td>
           </tr>
         {/each}
@@ -126,6 +139,22 @@
           <li class:bad={!r.ok}>{r.icon} {r.text}</li>
         {/each}
       </ul>
+    {/if}
+    {#if view.growth}
+      {@const g = view.growth}
+      <div class="growth">
+        <div class="growth-head">
+          <b>Growth ×{g.factor.toFixed(1)}</b>
+          <span>max ×{g.max}</span>
+        </div>
+        <div class="growth-bar"><div style="width: {Math.min(100, ((g.factor - 1) / Math.max(1e-9, g.max - 1)) * 100)}%"></div></div>
+        <p>
+          Makes more the more {g.resource.def.icon} {g.resource.name} there is above {num(g.threshold)}:
+          +{Math.round(g.perUnit * 100)}% per unit, up to ×{g.max} at {num(g.fullAt)}{g.fullAt > g.resource.max
+            ? ` (more than you can store: ${g.resource.max})`
+            : ''}. Now {num(Math.floor(g.stock))}.
+        </p>
+      </div>
     {/if}
     {#if view.inputs.length === 0 && view.catalysts.length === 0 && view.outputs.length === 0}
       <p class="empty">Nothing in, nothing out.</p>
@@ -315,6 +344,40 @@
   }
   tr.full td {
     background: color-mix(in srgb, var(--full) 12%, transparent);
+  }
+  .growth {
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--ok) 8%, var(--panel-2));
+    border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent);
+  }
+  .growth-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .growth-head span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .growth-bar {
+    height: 5px;
+    margin: 6px 0;
+    border-radius: 3px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .growth-bar div {
+    height: 100%;
+    background: var(--ok);
+    transition: width 0.45s linear;
+  }
+  .growth p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
   }
   .conditions {
     list-style: none;

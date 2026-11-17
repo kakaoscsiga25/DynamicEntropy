@@ -37,7 +37,7 @@
           conv: c,
           name: c.name,
           state: c.state,
-          amount: `+${num(make.amount)}`,
+          amount: c.growth && !make.byproduct ? `+${c.output(make).toFixed(1)}` : `+${num(make.amount)}`,
           note: make.byproduct ? 'side product' : '',
         });
       }
@@ -134,7 +134,6 @@
     <div class="numbers">
       <b>{view.amount}</b><span class="max">/ {res.max}</span>
       <span class="rate {trend.direction}">{trend.text}</span>
-      <span class="eta">{trend.eta}</span>
     </div>
     <div class="bar"><div style="width: {view.ratio * 100}%"></div></div>
   </div>
@@ -234,10 +233,6 @@
   }
   .rate.down {
     color: var(--bad);
-  }
-  .eta {
-    font-size: 12px;
-    color: var(--muted);
   }
   .bar {
     height: 6px;

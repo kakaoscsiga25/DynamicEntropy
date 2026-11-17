@@ -15,7 +15,7 @@
     return out;
   });
 
-  // Rates and countdowns change only once per second, so they are readable.
+  // Rates change only once per second, so they are readable.
   const trends = $derived.by(() => {
     ui.second;
     const map = new Map<string, Trend>();
@@ -58,7 +58,6 @@
           <span class="name">{r.name}</span>
           <span class="amount"><b>{r.amount}</b><span class="max">/{r.max}</span></span>
           <span class="bar"><span style="width: {r.ratio * 100}%; background: {r.color}"></span></span>
-          <span class="eta">{t?.eta ?? ''}</span>
           <span class="rate {t?.direction ?? ''}">{t?.text ?? ''}</span>
         </button>
       {/each}
@@ -100,8 +99,7 @@
     grid-template-columns: 22px 1fr auto;
     grid-template-areas:
       'icon name amount'
-      'icon bar bar'
-      'icon eta rate';
+      'icon bar rate';
     column-gap: 8px;
     row-gap: 3px;
     align-items: center;
@@ -169,13 +167,6 @@
     height: 100%;
     border-radius: 3px;
     transition: width 0.45s linear;
-  }
-  .eta {
-    grid-area: eta;
-    min-height: 13px;
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
   }
   .rate {
     grid-area: rate;

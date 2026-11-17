@@ -2,14 +2,14 @@
 // playtime, autosave and player actions. Components import from here.
 
 import { Game, TICK_MS, TICKS_PER_SECOND } from '../game/engine';
-import { countdown, rate } from './format';
+import { rate } from './format';
 import { clearSave, loadSave, serialize, writeSave, type KeyValueStore } from '../game/save';
 
 export const APP_VERSION = __APP_VERSION__;
 export const DEV = new URLSearchParams(location.search).has('dev');
 const AUTOSAVE_SECONDS = 60;
-/** Rate smoothing per tick (exponential moving average, remembers roughly the last 5 seconds). */
-const RATE_SMOOTHING = 0.1;
+/** The "+x/s" rate shows the change over the last second (2 ticks): things change fast. */
+const RATE_WINDOW_TICKS = TICKS_PER_SECOND;
 
 export const game = new Game();
 
@@ -57,11 +57,14 @@ export function toast(text: string) {
 
 // ------------------------------------------------------------ rates
 
-const smoothed: number[] = game.resources.map(() => 0);
+const recentDeltas: number[][] = []; // per tick: change of every resource
 
-/** Net change per second of a resource, smoothed over the last few seconds. */
+/** Net change per second of a resource during the last second. */
 export function ratePerSecond(index: number): number {
-  return smoothed[index];
+  if (recentDeltas.length === 0) return 0;
+  let sum = 0;
+  for (const d of recentDeltas) sum += d[index];
+  return (sum / recentDeltas.length) * TICKS_PER_SECOND;
 }
 
 export interface Trend {
@@ -69,19 +72,12 @@ export interface Trend {
   /** "+1.2/s", or '' when not changing. */
   text: string;
   direction: 'up' | 'down' | '';
-  /** "full in 12s", "empty in 3m 05s", "full" or ''. */
-  eta: string;
 }
 
 export function resourceTrend(index: number): Trend {
-  const r = game.resources[index];
   const perSecond = ratePerSecond(index);
   const direction = perSecond >= 0.05 ? 'up' : perSecond <= -0.05 ? 'down' : '';
-  let eta = '';
-  if (r.amount >= r.max - 1e-9) eta = 'full';
-  else if (direction === 'up') eta = `full in ${countdown((r.max - r.amount) / perSecond)}`;
-  else if (direction === 'down' && r.amount > 1e-9) eta = `empty in ${countdown(r.amount / -perSecond)}`;
-  return { perSecond, text: rate(perSecond), direction, eta };
+  return { perSecond, text: rate(perSecond), direction };
 }
 
 // ------------------------------------------------------------ loop
@@ -90,9 +86,8 @@ let tickTimer: ReturnType<typeof setInterval> | undefined;
 
 function step() {
   const found = game.tick();
-  game.resources.forEach((r, i) => {
-    smoothed[i] += RATE_SMOOTHING * (r.lastDelta * TICKS_PER_SECOND - smoothed[i]);
-  });
+  recentDeltas.push(game.resources.map((r) => r.lastDelta));
+  if (recentDeltas.length > RATE_WINDOW_TICKS) recentDeltas.shift();
   for (const id of found) toast(`Discovered: ${game.converter(id).name}`);
   refresh();
 }

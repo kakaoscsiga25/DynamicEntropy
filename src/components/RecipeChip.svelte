@@ -29,7 +29,15 @@
     side,
     bad = false,
     full = false,
-  }: { recipe: Recipe; side: 'in' | 'out'; bad?: boolean; full?: boolean } = $props();
+    value,
+  }: {
+    recipe: Recipe;
+    side: 'in' | 'out';
+    bad?: boolean;
+    full?: boolean;
+    /** Current amount when it differs from the recipe (growing output). Shown with one decimal. */
+    value?: number;
+  } = $props();
 
   const kind = $derived(side === 'out' ? 'out' : recipe.kind);
   const id = $derived(recipe.resource.id);
@@ -59,6 +67,8 @@
       <span class="op">≥</span>{num(recipe.atLeast)}
     {:else if kind === 'condition'}
       <span class="op">{recipe.atMost === 0 ? '=' : '≤'}</span>{num(recipe.atMost)}
+    {:else if value !== undefined}
+      <span class="grown">{value.toFixed(1)}</span>
     {:else}
       {num(recipe.amount)}
       {#if side === 'in' && recipe.atLeast > recipe.amount}
@@ -92,6 +102,9 @@
   .icon {
     font-size: 13px;
     line-height: 1;
+  }
+  .grown {
+    color: #c8f7d4;
   }
   .op,
   .min {

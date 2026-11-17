@@ -24,16 +24,6 @@ export function rate(perSecond: number): string {
   return `${sign}${a >= 100 ? a.toFixed(0) : a.toFixed(1)}/s`;
 }
 
-/** Countdown as m:ss (or h:mm:ss): fixed length, unlike "45s" → "1m 05s". */
-export function countdown(seconds: number): string {
-  const s = Math.max(0, Math.ceil(seconds));
-  if (s >= 100 * 3600) return '99h+';
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = String(s % 60).padStart(2, '0');
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-}
-
 export function clock(seconds: number): string {
   const s = Math.floor(seconds);
   const h = Math.floor(s / 3600);

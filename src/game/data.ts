@@ -2,7 +2,8 @@ import type { GameData } from './defs.ts';
 
 // Game content. Started as a 1:1 copy of legacy/core/data.py (v1.3.2).
 // v2 additions: storage buildings, house upgrades moved to the Build panel,
-// food gives Stamina (Eat fruit, Eat bread).
+// eating bread gives Stamina (Eat bread), growth: Forest and fields make
+// more the bigger the stock above their minimum, up to their size.
 // Visual-only fields: icon, color, group, hub, byproduct, region, x, y.
 // Balance check: `npm run sim` plays the game with bots and reports timings.
 
@@ -62,6 +63,8 @@ export const DATA: GameData = {
     },
     {
       id: 'forest', name: 'Forest', region: 'wilds', x: 810, y: 110,
+      // 50 Plant: ×1, 75 Plant: ×2 (cap). "Plant more trees" → ×3 at 100.
+      growth: { res: 'plant', perUnit: 0.04, maxFactor: 2 },
       needs: [
         { res: 'water', amount: 0.1, atLeast: 0 },
         { res: 'plant', amount: 1, atLeast: 50 },
@@ -87,10 +90,7 @@ export const DATA: GameData = {
         { res: 'fruit', amount: 1 },
         { res: 'dreaming', amount: 0, atMost: 0 },
       ],
-      makes: [
-        { res: 'seed', amount: 0.2 },
-        { res: 'stamina', amount: 1 },
-      ],
+      makes: [{ res: 'seed', amount: 0.2 }],
     },
     {
       id: 'garden', name: 'Garden', region: 'wilds', x: 810, y: 0,
@@ -134,6 +134,8 @@ export const DATA: GameData = {
     },
     {
       id: 'cotton_field', name: 'Cotton field', region: 'fields', x: 540, y: 330,
+      // 10 Seed: ×1, 20: ×2, 30: ×3 (cap). "Bigger cotton field" → ×5 at 50.
+      growth: { res: 'seed', perUnit: 0.1, maxFactor: 3 },
       needs: [
         { res: 'water', amount: 1, atLeast: 0 },
         { res: 'seed', amount: 0, atLeast: 10 },
@@ -153,6 +155,7 @@ export const DATA: GameData = {
     },
     {
       id: 'wheat_field', name: 'Wheat field', region: 'fields', x: 270, y: 440,
+      growth: { res: 'seed', perUnit: 0.1, maxFactor: 3 },
       needs: [
         { res: 'water', amount: 1, atLeast: 0 },
         { res: 'seed', amount: 0, atLeast: 10 },
@@ -330,6 +333,21 @@ export const DATA: GameData = {
         needs: [{ res: 'water', amount: 0.4 }],
         makes: [{ res: 'plant', amount: 3 }],
       }],
+    },
+    {
+      id: 'plant_more_trees', name: 'Plant more trees',
+      costs: [{ res: 'seed', amount: 15 }, { res: 'stamina', amount: 40 }],
+      changes: [{ converter: 'forest', mode: 'by', growthMax: 1 }],
+    },
+    {
+      id: 'bigger_cotton_field', name: 'Bigger cotton field',
+      costs: [{ res: 'wood', amount: 30 }, { res: 'tool', amount: 1 }],
+      changes: [{ converter: 'cotton_field', mode: 'by', growthMax: 2 }],
+    },
+    {
+      id: 'bigger_wheat_field', name: 'Bigger wheat field',
+      costs: [{ res: 'wood', amount: 30 }, { res: 'tool', amount: 1 }],
+      changes: [{ converter: 'wheat_field', mode: 'by', growthMax: 2 }],
     },
     {
       id: 'advanced_handle', name: 'Advanced handle',

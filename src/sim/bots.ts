@@ -96,12 +96,21 @@ function makePlanner(name: string, micro: boolean, description: string): Bot {
 
       const candidates = game.converters.filter((c) => game.discovered.has(c.id) && !c.unstoppable && c.id !== TWIDDLE);
 
-      // Minimum stocks that keep loops alive (only cared about in micro mode).
+      // Stocks that keep loops alive (only cared about in micro mode). A loop that
+      // grows with its stock (Forest) is kept at the level where it grows fastest.
       const protect = new Map<Resource, number>();
       if (micro) {
         for (const c of candidates) {
           for (const n of c.needs) {
-            if (isLoopFor(c, n.resource)) protect.set(n.resource, Math.max(protect.get(n.resource) ?? 0, n.atLeast));
+            if (!isLoopFor(c, n.resource)) continue;
+            const level = c.growth?.resource === n.resource ? Math.max(n.atLeast, c.growthFullAt()) : n.atLeast;
+            // Leave room below the storage limit to actually harvest (e.g. Wood cutting takes 5 Plant).
+            const biggestUse = Math.max(
+              0,
+              ...candidates.filter((o) => o !== c).flatMap((o) => o.needs.filter((m) => m.resource === n.resource).map((m) => m.amount)),
+            );
+            const room = n.resource.max - 2 * biggestUse - 1;
+            protect.set(n.resource, Math.max(protect.get(n.resource) ?? 0, Math.max(n.atLeast, Math.min(level, room))));
           }
         }
       }
@@ -137,6 +146,8 @@ function makePlanner(name: string, micro: boolean, description: string): Bot {
           if (!needed && !explores) continue;
           useful.add(c);
           changed = true;
+          // Growing nodes work best with their growth stock at the cap.
+          if (c.growth) raise(c.growth.resource, c.growthFullAt());
           for (const n of c.needs) {
             if (n.kind !== 'consume' && n.kind !== 'catalyst') continue;
             if (n.resource.id === 'stamina') continue; // comes from sleeping

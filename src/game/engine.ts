@@ -2,6 +2,12 @@
 // Rules are a 1:1 port of legacy/core/*.py (v1.3.2); see the golden test.
 
 import type { ChangeDef, ConverterDef, GameData, RecipeDef, ResourceDef, UpgradeDef } from './defs.ts';
+
+export interface Growth {
+  resource: Resource;
+  perUnit: number;
+  maxFactor: number;
+}
 import { DATA } from './data.ts';
 
 /** One tick (production cycle) lasts this long in real time. */
@@ -108,6 +114,8 @@ export class Converter {
   makes: Recipe[];
   state: ConverterState;
   upgrades: Upgrade[] = [];
+  /** Output grows with a stock above the minimum (see GrowthDef). */
+  growth: Growth | null;
 
   constructor(def: ConverterDef, game: Game) {
     this.def = def;
@@ -115,6 +123,9 @@ export class Converter {
     this.needs = def.needs.map((r) => game.recipe(r));
     this.makes = def.makes.map((r) => game.recipe(r));
     this.state = def.unstoppable ? 'noInput' : 'stopped';
+    this.growth = def.growth
+      ? { resource: game.resource(def.growth.res), perUnit: def.growth.perUnit, maxFactor: def.growth.maxFactor }
+      : null;
   }
 
   get id() { return this.def.id; }
@@ -123,6 +134,31 @@ export class Converter {
 
   start(): void {
     this.state = 'ok';
+  }
+
+  /** The minimum stock of the growth resource (this node's atLeast for it). */
+  growthThreshold(): number {
+    if (!this.growth) return 0;
+    const g = this.growth;
+    return this.needs.find((n) => n.resource === g.resource)?.atLeast ?? 0;
+  }
+
+  /** Output multiplier right now: 1 at the minimum, growing with the stock above it, up to the cap. */
+  growthFactor(): number {
+    if (!this.growth) return 1;
+    const excess = Math.max(0, this.growth.resource.amount - this.growthThreshold());
+    return Math.min(this.growth.maxFactor, 1 + this.growth.perUnit * excess);
+  }
+
+  /** Stock of the growth resource at which the output reaches its cap. */
+  growthFullAt(): number {
+    if (!this.growth) return 0;
+    return this.growthThreshold() + (this.growth.maxFactor - 1) / this.growth.perUnit;
+  }
+
+  /** How much of this output line is made per cycle right now. */
+  output(r: Recipe, factor = this.growthFactor()): number {
+    return this.growth && !r.byproduct ? r.amount * factor : r.amount;
   }
 
   stop(): void {
@@ -162,8 +198,10 @@ export class Converter {
       }
     }
     this.state = 'ok';
+    // The growth factor is measured before this cycle's inputs are taken.
+    const factor = this.growthFactor();
     for (const r of this.needs) r.resource.take(r.amount);
-    for (const r of this.makes) r.resource.give(r.amount);
+    for (const r of this.makes) r.resource.give(this.output(r, factor));
   }
 }
 
@@ -191,9 +229,11 @@ export interface UpgradeEffects {
   converter: Converter;
   recipes: RecipeEffect[];
   rename?: string;
+  growthMax?: { before: number; after: number };
 }
 
 interface Change {
+  growthMax?: number;
   converter: Converter;
   mode: 'by' | 'to';
   needs: Recipe[];
@@ -242,6 +282,7 @@ export class Upgrade {
       needs: (c.needs ?? []).map((r) => game.recipe(r)),
       makes: (c.makes ?? []).map((r) => game.recipe(r)),
       rename: c.rename,
+      growthMax: c.growthMax,
     }));
     this.host = !def.building && this.changes.length === 1 ? this.changes[0].converter : null;
   }
@@ -275,6 +316,9 @@ export class Upgrade {
       applyRecipes(ch.mode, ch.converter.needs, ch.needs);
       applyRecipes(ch.mode, ch.converter.makes, ch.makes);
       if (ch.rename) ch.converter.name = ch.rename;
+      if (ch.growthMax !== undefined && ch.converter.growth) {
+        ch.converter.growth.maxFactor = ch.mode === 'by' ? ch.converter.growth.maxFactor + ch.growthMax : ch.growthMax;
+      }
     }
     for (const c of this.capacity) c.resource.max += c.amount;
     this.bought = true;
@@ -307,6 +351,10 @@ export class Upgrade {
         });
       }
       if (ch.rename && ch.rename !== ch.converter.name) result.rename = ch.rename;
+      const g = ch.converter.growth;
+      if (ch.growthMax !== undefined && g) {
+        result.growthMax = { before: g.maxFactor, after: ch.mode === 'by' ? g.maxFactor + ch.growthMax : ch.growthMax };
+      }
       return result;
     });
   }

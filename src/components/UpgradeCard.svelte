@@ -63,6 +63,13 @@
       {#if fx.rename}
         <li>Renames <b>{fx.converter.name}</b> to <b>{fx.rename}</b></li>
       {/if}
+      {#if fx.growthMax}
+        <li>
+          {#if !upgrade.host}<b>{fx.converter.name}:</b>{/if}
+          Size (max growth) ×{num(fx.growthMax.before)} → ×{num(fx.growthMax.after)}
+          <span class="tag good">▲</span>
+        </li>
+      {/if}
       {#each fx.recipes as r}
         {@const better = r.kind === 'need' ? r.after.amount < r.before.amount : r.after.amount > r.before.amount}
         <li>

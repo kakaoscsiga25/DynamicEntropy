@@ -1,10 +1,13 @@
-.gitignore
+# Node / build
+node_modules/
+dist/
 
+# Python (legacy + tools)
 venv/
-
-.idea/
-
 *__pycache__*
 /**/__pycache__/
 *.py[cod]
-*/brython_modules.js
+
+# IDE
+.idea/
+.vscode/

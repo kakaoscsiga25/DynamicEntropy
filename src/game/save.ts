@@ -1,7 +1,7 @@
 // Save / load. Saves use stable ids (not display names), so renaming things in
 // data.ts doesn't break saves. Old v1.x (Brython) saves are migrated automatically.
 
-import type { Game } from './engine.ts';
+import type { Cycle, Game } from './engine.ts';
 
 export const SAVE_KEY = 'dynamic-entropy-save';
 const LEGACY_KEYS = ['save_version', 'save_resources', 'save_upgrades', 'save_playtime'];
@@ -18,6 +18,10 @@ export interface SaveData {
   /** Converters switched on by the player. */
   running: string[];
   discovered: string[];
+  /** Pace of the nodes that aren't at 100% (missing in older saves). */
+  pace?: Record<string, number>;
+  /** Cycles in progress (their inputs are already paid). */
+  cycles?: Record<string, Cycle>;
 }
 
 /** Minimal localStorage-like interface (lets tests use a plain object). */
@@ -37,6 +41,8 @@ export function serialize(game: Game, playtime: number, appVersion: string): Sav
     upgrades: [...game.boughtOrder],
     running: game.converters.filter((c) => !c.unstoppable && !c.stopped).map((c) => c.id),
     discovered: [...game.discovered],
+    pace: Object.fromEntries(game.converters.filter((c) => c.pace !== 1).map((c) => [c.id, c.pace])),
+    cycles: Object.fromEntries(game.converters.filter((c) => c.cycle).map((c) => [c.id, { ...c.cycle! }])),
   };
 }
 
@@ -57,6 +63,18 @@ export function restore(game: Game, save: SaveData): void {
   }
   for (const id of save.discovered) {
     if (game.hasConverter(id)) game.discovered.add(id);
+  }
+  for (const [id, pace] of Object.entries(save.pace ?? {})) {
+    if (game.hasConverter(id)) game.setPace(id, pace);
+  }
+  for (const c of game.converters) c.activePace = c.pace;
+  for (const [id, cycle] of Object.entries(save.cycles ?? {})) {
+    if (!game.hasConverter(id)) continue;
+    const { progress, pace, growth } = cycle;
+    if (![progress, pace, growth].every(Number.isFinite)) continue;
+    const c = game.converter(id);
+    c.cycle = { progress: Math.min(1, Math.max(0, progress)), pace, growth };
+    c.activePace = pace;
   }
   game.updateDiscovery();
 }

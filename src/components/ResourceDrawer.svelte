@@ -37,7 +37,7 @@
           conv: c,
           name: c.name,
           state: c.state,
-          amount: c.growth && !make.byproduct ? `+${c.output(make).toFixed(1)}` : `+${num(make.amount)}`,
+          amount: c.growth && !make.byproduct ? `+${c.output(make).toFixed(1)}` : `+${num(c.output(make))}`,
           note: make.byproduct ? 'side product' : '',
         });
       }

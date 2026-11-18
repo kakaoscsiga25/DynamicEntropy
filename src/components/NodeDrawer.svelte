@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { game, ui, select, selectResource, toggleConverter } from '../ui/session.svelte';
+  import { game, ui, select, selectResource, toggleConverter, setPace } from '../ui/session.svelte';
   import { num, stock } from '../ui/format';
-  import { TICK_MS, TICKS_PER_SECOND, type Recipe } from '../game/engine';
+  import { PACE_MIN, PACE_STEP, paceEfficiency, paceOutput, type Recipe } from '../game/engine';
   import { recipeText } from './RecipeChip.svelte';
   import UpgradeCard from './UpgradeCard.svelte';
   import { STATE_LABEL } from './states';
@@ -28,6 +28,11 @@
     return {
       name: c.name,
       state: c.state,
+      pace: c.pace,
+      activePace: c.activePace,
+      pending: c.pacePending,
+      paceMax: game.paceMax(),
+      cycleSeconds: c.cycleSeconds(),
       blocking: blocking.map((r) => r.resource.name),
       inputs: c.needs.filter((r) => r.kind === 'consume').map((r) => ({ ...res(r), amount: r.amount, atLeast: r.atLeast })),
       catalysts: c.needs.filter((r) => r.kind === 'catalyst').map((r) => ({ ...res(r), atLeast: r.atLeast })),
@@ -37,6 +42,7 @@
         amount: c.output(r),
         base: r.amount,
         grows: !!c.growth && !r.byproduct,
+        paced: c.pace !== 1 && !r.byproduct,
         ok: r.resource.amount < r.resource.max,
       })),
       growth: c.growth
@@ -54,6 +60,19 @@
       locked: c.upgrades.filter((u) => !u.bought && !u.requirementsMet()),
       owned: c.upgrades.filter((u) => u.bought),
     };
+  });
+
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+  const paceText = $derived.by(() => {
+    const p = view.pace;
+    if (p === 1) {
+      return view.paceMax > 1
+        ? 'Normal pace. Slower gets more out of each input; faster makes more per second, but wastes inputs.'
+        : 'Normal pace. Slower makes less per second, but gets more out of each input.';
+    }
+    const extra = Math.round((paceEfficiency(p) - 1) * 100);
+    return `Uses ${pct(p)} of the inputs per second, makes ${pct(paceOutput(p))} of the outputs: ${extra > 0 ? '+' : '−'}${Math.abs(extra)}% from each input.`;
   });
 
   const status = $derived.by(() => {
@@ -94,8 +113,35 @@
     {/if}
   </div>
 
+  {#if view.paceMax > 0 && !conv.unstoppable}
+    <section class="pace">
+      <h3>Pace <small>how hard this node works</small></h3>
+      <div class="pace-row">
+        <input
+          type="range"
+          min={PACE_MIN}
+          max={view.paceMax}
+          step={PACE_STEP}
+          value={view.pace}
+          list="pace-marks"
+          aria-label="Pace"
+          oninput={(e) => setPace(conv.id, Number(e.currentTarget.value))}
+        />
+        <datalist id="pace-marks"><option value="1"></option></datalist>
+        <span class="pace-value" class:pending={view.pending} class:over={view.pace > 1}
+          >{view.pending ? '⏳' : ''}{pct(view.pace)}</span
+        >
+        <button class="reset" disabled={view.pace === 1} onclick={() => setPace(conv.id, 1)} title="Back to 100%">↺</button>
+      </div>
+      <p class="pace-text">{paceText}</p>
+      {#if view.pending}
+        <p class="pace-pending">⏳ Applies when the next cycle starts (now {pct(view.activePace)}).</p>
+      {/if}
+    </section>
+  {/if}
+
   <section>
-    <h3>Recipe <small>1 cycle = {TICK_MS / 1000}s · click a resource for details</small></h3>
+    <h3>Recipe <small>1 cycle = {num(view.cycleSeconds)}s · click a resource for details</small></h3>
     <table>
       <thead>
         <tr><th></th><th></th><th>cycle</th><th>per sec</th><th>stock</th></tr>
@@ -107,7 +153,7 @@
             <td class="icon">{r.icon}</td>
             <td>{r.name}{#if r.atLeast > r.amount}<span class="sub"> · min. stock {num(r.atLeast)}</span>{/if}</td>
             <td class="num neg">−{num(r.amount)}</td>
-            <td class="num rate">{num(r.amount * TICKS_PER_SECOND)}/s</td>
+            <td class="num rate">{num(r.amount / view.cycleSeconds)}/s</td>
             <td class="num stock">{r.stock}</td>
           </tr>
         {/each}
@@ -126,8 +172,10 @@
           <tr class="out" class:full={!r.ok} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
             <td>{r.name}</td>
-            <td class="num pos" title={r.grows ? `base ${num(r.base)} × growth` : ''}>+{r.grows ? r.amount.toFixed(1) : num(r.amount)}</td>
-            <td class="num rate">{r.grows ? (r.amount * TICKS_PER_SECOND).toFixed(1) : num(r.amount * TICKS_PER_SECOND)}/s</td>
+            <td class="num pos" title={r.grows || r.paced ? `base ${num(r.base)}${r.grows ? ' × growth' : ''}${r.paced ? ' × pace' : ''}` : ''}
+              >+{r.grows ? r.amount.toFixed(1) : num(r.amount)}</td
+            >
+            <td class="num rate">{r.grows ? (r.amount / view.cycleSeconds).toFixed(1) : num(r.amount / view.cycleSeconds)}/s</td>
             <td class="num stock">{r.stock}/{r.max}</td>
           </tr>
         {/each}
@@ -344,6 +392,53 @@
   }
   tr.full td {
     background: color-mix(in srgb, var(--full) 12%, transparent);
+  }
+  .pace-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .pace-row input {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent);
+  }
+  .pace-value {
+    min-width: 6ch;
+    text-align: right;
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #bfe3ff;
+  }
+  .pace-value.over {
+    color: #ffd2b0;
+  }
+  .pace-value.pending {
+    color: var(--muted);
+  }
+  .reset {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .reset:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .pace-text,
+  .pace-pending {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .pace-pending {
+    color: var(--warn);
   }
   .growth {
     margin-top: 10px;

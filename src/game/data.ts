@@ -3,7 +3,8 @@ import type { GameData } from './defs.ts';
 // Game content. Started as a 1:1 copy of legacy/core/data.py (v1.3.2).
 // v2 additions: storage buildings, house upgrades moved to the Build panel,
 // eating bread gives Stamina (Eat bread), growth: Forest and fields make
-// more the bigger the stock above their minimum, up to their size.
+// more the bigger the stock above their minimum, up to their size. Skills:
+// Steady pace (pace slider) and Overtime (pace above 100%).
 // Visual-only fields: icon, color, group, hub, byproduct, region, x, y.
 // Balance check: `npm run sim` plays the game with bots and reports timings.
 
@@ -295,6 +296,20 @@ export const DATA: GameData = {
       changes: [],
       capacity: [{ res: 'tool', amount: 10 }, { res: 'iron', amount: 50 }, { res: 'iron_ore', amount: 100 }],
     },
+
+    // ---- Skills (Build panel): how you work, on every node
+    {
+      id: 'steady_pace', name: 'Steady pace', building: true, unlocks: 'pace',
+      costs: [{ res: 'bread', amount: 20 }, { res: 'fabric', amount: 10 }, { res: 'tool', amount: 1 }, { res: 'stamina', amount: 60 }],
+      changes: [],
+    },
+    {
+      id: 'overtime', name: 'Overtime', building: true, unlocks: 'overclock',
+      requires: ['steady_pace'],
+      costs: [{ res: 'tool', amount: 2 }, { res: 'bread', amount: 30 }, { res: 'stamina', amount: 80 }],
+      changes: [],
+    },
+
     {
       id: 'built_road', name: 'Built road',
       costs: [{ res: 'brick', amount: 10 }],

@@ -35,7 +35,7 @@
     side: 'in' | 'out';
     bad?: boolean;
     full?: boolean;
-    /** Current amount when it differs from the recipe (growing output). Shown with one decimal. */
+    /** Current amount when it differs from the recipe (growth, pace). One decimal (two below 1). */
     value?: number;
   } = $props();
 
@@ -68,7 +68,7 @@
     {:else if kind === 'condition'}
       <span class="op">{recipe.atMost === 0 ? '=' : '≤'}</span>{num(recipe.atMost)}
     {:else if value !== undefined}
-      <span class="grown">{value.toFixed(1)}</span>
+      <span class="grown">{value.toFixed(value < 1 ? 2 : 1)}</span>
     {:else}
       {num(recipe.amount)}
       {#if side === 'in' && recipe.atLeast > recipe.amount}

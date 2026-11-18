@@ -1,20 +1,52 @@
 // The game simulation. No UI code here, so it can be unit tested.
-// Rules are a 1:1 port of legacy/core/*.py (v1.3.2); see the golden test.
+// Started as a port of legacy/core/*.py (v1.3.2). v2 adds storage, growth,
+// cycles (each node works in its own loop) and pace.
 
 import type { ChangeDef, ConverterDef, GameData, RecipeDef, ResourceDef, UpgradeDef } from './defs.ts';
+import { DATA } from './data.ts';
+
+/** The game clock: everything advances once per tick. */
+export const TICK_MS = 500;
+export const TICKS_PER_SECOND = 1000 / TICK_MS;
+
+const EPS = 1e-10;
+
+// ---------------------------------------------------------------- Pace
+
+/** The pace slider goes from 10% to 100% (200% with overclocking), in 10% steps. */
+export const PACE_MIN = 0.1;
+export const PACE_STEP = 0.1;
+export const PACE_MAX = 1;
+export const OVERCLOCK_MAX = 2;
+
+/**
+ * Output per cycle at a pace, relative to 100% (inputs per cycle don't change).
+ * Slower is more efficient (50% → ×1.15), faster is wasteful (200% → ×0.7).
+ */
+export function paceEfficiency(pace: number): number {
+  return 1 + 0.3 * (1 - pace);
+}
+
+/** Output per second at a pace, relative to 100%: 1.3·p − 0.3·p². (Inputs per second: p.) */
+export function paceOutput(pace: number): number {
+  return pace * paceEfficiency(pace);
+}
 
 export interface Growth {
   resource: Resource;
   perUnit: number;
   maxFactor: number;
 }
-import { DATA } from './data.ts';
 
-/** One tick (production cycle) lasts this long in real time. */
-export const TICK_MS = 500;
-export const TICKS_PER_SECOND = 1000 / TICK_MS;
-
-const EPS = 1e-10;
+/** A cycle in progress: its inputs are already taken, its outputs come when it ends. */
+export interface Cycle {
+  /** 0..1 */
+  progress: number;
+  /** Pace it runs at (set when it started). */
+  pace: number;
+  /** Growth factor measured when it started. */
+  growth: number;
+}
 
 // ---------------------------------------------------------------- Resource
 
@@ -25,8 +57,15 @@ export class Resource {
   max: number;
   /** Produced during the current tick; added at the end of the tick (see flush). */
   pending = 0;
-  /** Net change during the last tick (for rate display). */
+  /** Net change during the last tick. */
   lastDelta = 0;
+  /**
+   * Production minus use during the current tick, with every cycle's inputs and
+   * outputs spread evenly over the cycle (so slow cycles don't make it jump).
+   */
+  flow = 0;
+  /** `flow` of the last tick (for rate display). */
+  lastFlow = 0;
 
   constructor(def: ResourceDef) {
     this.def = def;
@@ -48,6 +87,14 @@ export class Resource {
       this.amount >= r.atLeast - EPS &&
       this.amount + this.pending <= r.atMost + EPS
     );
+  }
+
+  /**
+   * Can a cycle that already took its inputs keep going? Same limits as
+   * `satisfies`, but the cycle's own use doesn't count against the minimum.
+   */
+  holds(r: Recipe): boolean {
+    return this.amount + r.amount >= r.atLeast - EPS && this.amount + this.pending <= r.atMost + EPS;
   }
 
   take(amount: number): void {
@@ -103,8 +150,8 @@ export class Recipe {
 
 export type ConverterState =
   | 'ok'       // running
-  | 'stopped'  // switched off by the player
-  | 'noInput'  // not enough input (or a condition is not met)
+  | 'stopped'  // switched off by the player (a cycle in progress is kept)
+  | 'noInput'  // not enough input to start a cycle, or a condition stopped the current one
   | 'full';    // every output is at max
 
 export class Converter {
@@ -116,12 +163,21 @@ export class Converter {
   upgrades: Upgrade[] = [];
   /** Output grows with a stock above the minimum (see GrowthDef). */
   growth: Growth | null;
+  /** Length of one cycle at 100% pace, in ticks (at least 1). */
+  readonly cycleTicks: number;
+  /** Pace set by the player. A change applies when the next cycle starts. */
+  pace = 1;
+  /** Pace of the cycle that started last (what's really running). */
+  activePace = 1;
+  /** The cycle in progress, or null between cycles. */
+  cycle: Cycle | null = null;
 
   constructor(def: ConverterDef, game: Game) {
     this.def = def;
     this.name = def.name;
     this.needs = def.needs.map((r) => game.recipe(r));
     this.makes = def.makes.map((r) => game.recipe(r));
+    this.cycleTicks = Math.max(1, (def.cycle ?? 0) * TICKS_PER_SECOND);
     this.state = def.unstoppable ? 'noInput' : 'stopped';
     this.growth = def.growth
       ? { resource: game.resource(def.growth.res), perUnit: def.growth.perUnit, maxFactor: def.growth.maxFactor }
@@ -156,9 +212,23 @@ export class Converter {
     return this.growthThreshold() + (this.growth.maxFactor - 1) / this.growth.perUnit;
   }
 
-  /** How much of this output line is made per cycle right now. */
-  output(r: Recipe, factor = this.growthFactor()): number {
-    return this.growth && !r.byproduct ? r.amount * factor : r.amount;
+  /**
+   * How much of this output line a cycle makes (now, at the set pace).
+   * Growth and pace change the main outputs only, not byproducts.
+   */
+  output(r: Recipe, growth = this.growthFactor(), pace = this.pace): number {
+    if (r.byproduct) return r.amount;
+    return r.amount * (this.growth ? growth : 1) * paceEfficiency(pace);
+  }
+
+  /** Seconds one cycle takes at a pace. */
+  cycleSeconds(pace = this.pace): number {
+    return this.cycleTicks / pace / TICKS_PER_SECOND;
+  }
+
+  /** The pace slider was moved, but the running cycle still uses the old pace. */
+  get pacePending(): boolean {
+    return Math.abs(this.pace - this.activePace) > 1e-9;
   }
 
   stop(): void {
@@ -181,27 +251,61 @@ export class Converter {
     return this.needs.filter((r) => !r.resource.satisfies(r));
   }
 
+  /**
+   * One tick of work. A node works in its own loop: when a cycle starts it takes
+   * its inputs, the cycle advances every tick (faster or slower with the pace),
+   * and when it ends the outputs are given. Leftover time starts the next cycle,
+   * so a fast pace can finish several cycles in one tick. Conditions (minimum or
+   * maximum stocks) are checked every tick; while one fails, the cycle waits.
+   * With a one-tick cycle at 100% this is exactly the old "once per tick" rule.
+   */
   update(): void {
     if (this.state === 'stopped') return;
-    let ok = this.makes.length === 0;
-    for (const r of this.makes) {
-      if (r.resource.amount < r.resource.max) ok = true;
-    }
-    if (!ok) {
-      this.state = 'full';
-      return;
-    }
-    for (const r of this.needs) {
-      if (!r.resource.satisfies(r)) {
+    let time = 1; // ticks of work left in this tick
+    for (let guard = 0; guard < 1000 && time > EPS; guard++) {
+      if (!this.cycle) {
+        if (!this.startCycle()) return;
+      } else if (!this.needs.every((r) => r.resource.holds(r))) {
         this.state = 'noInput';
         return;
       }
+      this.state = 'ok';
+      const cycle = this.cycle!;
+      const perTick = cycle.pace / this.cycleTicks; // share of the cycle done per tick
+      const step = Math.min(1 - cycle.progress, time * perTick);
+      cycle.progress += step;
+      time -= step / perTick;
+      this.addFlow(cycle, step);
+      if (cycle.progress >= 1 - EPS) this.finishCycle();
     }
-    this.state = 'ok';
+  }
+
+  private startCycle(): boolean {
+    if (this.makes.length > 0 && this.makes.every((r) => r.resource.amount >= r.resource.max)) {
+      this.state = 'full';
+      return false;
+    }
+    if (!this.needs.every((r) => r.resource.satisfies(r))) {
+      this.state = 'noInput';
+      return false;
+    }
     // The growth factor is measured before this cycle's inputs are taken.
-    const factor = this.growthFactor();
+    const growth = this.growthFactor();
     for (const r of this.needs) r.resource.take(r.amount);
-    for (const r of this.makes) r.resource.give(this.output(r, factor));
+    this.cycle = { progress: 0, pace: this.pace, growth };
+    this.activePace = this.pace;
+    return true;
+  }
+
+  private finishCycle(): void {
+    const c = this.cycle!;
+    for (const r of this.makes) r.resource.give(this.output(r, c.growth, c.pace));
+    this.cycle = null;
+  }
+
+  private addFlow(c: Cycle, share: number): void {
+    for (const r of this.needs) if (r.amount > 0) r.resource.flow -= r.amount * share;
+    for (const r of this.makes) r.resource.flow += this.output(r, c.growth, c.pace) * share;
   }
 }
 
@@ -430,14 +534,36 @@ export class Game {
     return new Recipe(this.resource(def.res), def.amount ?? 0, def.atLeast ?? 0, def.atMost ?? Infinity, !!def.byproduct);
   }
 
-  /** One production cycle. Returns the ids of newly discovered converters. */
+  /** One tick of the game clock. Returns the ids of newly discovered converters. */
   tick(): string[] {
     const before = this.resources.map((r) => r.amount);
+    for (const r of this.resources) r.flow = 0;
     for (const c of this.converters) c.update();
     for (const r of this.resources) r.flush();
-    this.resources.forEach((r, i) => (r.lastDelta = r.amount - before[i]));
+    this.resources.forEach((r, i) => {
+      r.lastDelta = r.amount - before[i];
+      // At the storage limit the surplus is lost: show the real change then.
+      r.lastFlow = r.amount >= r.max - EPS ? Math.min(r.flow, r.lastDelta) : r.flow;
+    });
     this.ticks++;
     return this.updateDiscovery();
+  }
+
+  /** Highest pace the player can set: 0 while the slider is locked, 1, or 2 with overclocking. */
+  paceMax(): number {
+    const has = (what: string) => this.upgrades.some((u) => u.bought && u.def.unlocks === what);
+    if (has('overclock')) return OVERCLOCK_MAX;
+    return has('pace') ? PACE_MAX : 0;
+  }
+
+  /** Sets a node's pace (rounded to 10% steps, within the unlocked range). It applies from the next cycle. */
+  setPace(id: string, pace: number): boolean {
+    const c = this.converter(id);
+    const max = this.paceMax();
+    if (c.unstoppable || max === 0 || !Number.isFinite(pace)) return false;
+    const steps = Math.round(1 / PACE_STEP); // round to whole steps without float noise (0.3, not 0.30000000000000004)
+    c.pace = Math.min(max, Math.max(PACE_MIN, Math.round(pace * steps) / steps));
+    return true;
   }
 
   buy(id: string): boolean {

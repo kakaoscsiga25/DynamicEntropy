@@ -29,7 +29,7 @@ src/
     data.ts          ALL game content: resources, converters (nodes), upgrades,
                      plus visual data (icons, colors, islands, node positions)
     defs.ts          The shapes of that data, with comments explaining each field
-    engine.ts        The simulation: ticks, recipes, upgrades, discovery
+    engine.ts        The simulation: ticks, cycles, pace, recipes, upgrades, discovery
     save.ts          Save / load (localStorage), migration of v1 saves
     __tests__/       Tests
   sim/               Headless simulator + bots for balancing (npm run sim)
@@ -49,8 +49,15 @@ Everything lives in `src/game/data.ts`. Converters run in the order they are
 listed (earlier ones get shared inputs first). `x`/`y` place the node on the map,
 `region` puts it on an island.
 
+Each node works in its own loop: a cycle takes the inputs when it starts and
+gives the outputs when it ends. `cycle` sets its length in seconds (default
+0.5 s, one tick). The player's **pace** slider (unlocked by the Steady pace
+skill, up to 200% with Overtime) changes how fast the cycles run: inputs per
+second follow the pace, outputs per second follow 1.3·p − 0.3·p², so slower is
+more efficient and faster is wasteful. A new pace applies from the next cycle.
+
 Upgrades marked `building: true` appear in the **Build** panel instead of on a
-node; `capacity` raises storage limits.
+node; `capacity` raises storage limits, `unlocks` makes it a skill.
 
 ### Balancing with the simulator
 
@@ -62,7 +69,9 @@ npm run sim -- --bot planner --full --hours 12
 Bots play the game headlessly (thousands of times faster than real time) and
 report when they finished, the purchase timeline, how often each node was
 running / waiting (and for what), and how full each resource was. Run it after
-changing numbers in `data.ts`.
+changing numbers in `data.ts`. The occasional-player bots (`visit-10m`,
+`visit-30m`, and their `+pace` versions that use the pace slider) need longer
+limits: `--hours 60 --stuck 12`.
 
 (Until v2.0 the rules were verified to match v1.3.2 exactly by a "golden" replay
 test; it was retired when the rules started to change. See git history.)

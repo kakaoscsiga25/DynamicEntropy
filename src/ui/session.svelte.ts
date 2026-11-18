@@ -57,9 +57,11 @@ export function toast(text: string) {
 
 // ------------------------------------------------------------ rates
 
-const recentDeltas: number[][] = []; // per tick: change of every resource
+// Per tick: net production of every resource, with slow cycles spread evenly
+// (Resource.lastFlow), so a node that delivers every few seconds doesn't make it jump.
+const recentDeltas: number[][] = [];
 
-/** Net change per second of a resource during the last second. */
+/** Net production per second of a resource during the last second. */
 export function ratePerSecond(index: number): number {
   if (recentDeltas.length === 0) return 0;
   let sum = 0;
@@ -86,7 +88,7 @@ let tickTimer: ReturnType<typeof setInterval> | undefined;
 
 function step() {
   const found = game.tick();
-  recentDeltas.push(game.resources.map((r) => r.lastDelta));
+  recentDeltas.push(game.resources.map((r) => r.lastFlow));
   if (recentDeltas.length > RATE_WINDOW_TICKS) recentDeltas.shift();
   for (const id of found) toast(`Discovered: ${game.converter(id).name}`);
   refresh();
@@ -141,11 +143,18 @@ export function toggleConverter(id: string) {
   refresh();
 }
 
+/** Sets a node's pace (0.1–1, up to 2 with Overtime). It applies when its next cycle starts. */
+export function setPace(id: string, pace: number) {
+  if (game.setPace(id, pace)) refresh();
+}
+
 export function buyUpgrade(id: string) {
   const u = game.upgrade(id);
   if (!game.buy(id)) return;
   refresh();
   if (u.def.final) ui.modal = 'ending';
+  else if (u.def.unlocks === 'pace') toast('Pace unlocked: select a node to set how hard it works');
+  else if (u.def.unlocks === 'overclock') toast('Overtime: a node\'s pace can now go up to 200%');
   else toast(`Bought: ${u.name}`);
 }
 

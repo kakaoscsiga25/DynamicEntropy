@@ -62,10 +62,10 @@
     <div class="howto">
       <p class="lead">You are dreaming. Build up your dream world until you can finally <b>wake up</b>.</p>
       <ul>
-        <li><b>Nodes</b> turn resources into other resources, once every cycle (0.5 s). Their chips show what goes in <span class="muted">→</span> what comes out.</li>
+        <li><b>Nodes</b> turn resources into other resources in cycles (0.5 s): the inputs go in when a cycle starts, the outputs come out when it ends. Their chips show what goes in <span class="muted">→</span> what comes out.</li>
         <li><b>Start / stop</b> a node by clicking the <b>colored strip</b> on its left side (or right-click it, or press Space when it's selected). <b>▶ all / ❚❚ all</b> next to an island's name switches the whole island.</li>
         <li><b>Click</b> a node to see its details and buy its <b>upgrades</b>. A glowing <span class="badge">⬆ 1</span> means you can afford one.</li>
-        <li><b>Build</b> (top bar) has your home and storage buildings: a better place to sleep, and room for more of each resource.</li>
+        <li><b>Build</b> (top bar) has your home and storage buildings: a better place to sleep, and room for more of each resource. Later also <b>skills</b>, like setting each node's <b>pace</b>: slower gets more out of each input.</li>
         <li><b>Eating bread</b> gives Stamina while you're awake.</li>
         <li>A node only works when it has enough input <span class="sw warn"></span>, and pauses when its outputs are full <span class="sw full"></span>.</li>
         <li><b>Lines</b> show resources flowing between nodes: the icon in the middle tells what flows, the arrow where. Lines of common resources (⚡ Stamina, 💧 Water, 🔥 Fire) only appear while you hover or select a node, to keep the map tidy.</li>

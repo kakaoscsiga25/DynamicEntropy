@@ -1,7 +1,7 @@
 // Plain data shapes used to describe the game content (see data.ts).
 // The engine (engine.ts) turns these into live objects.
 
-/** One line of a converter recipe. Amounts are per cycle (one tick). */
+/** One line of a converter recipe. Amounts are per cycle (see ConverterDef.cycle). */
 export interface RecipeDef {
   res: string;
   /** Consumed (needs) or produced (makes) per cycle. 0 = only a condition, nothing is consumed. */
@@ -40,8 +40,13 @@ export interface ConverterDef {
   region: string;
   x: number;
   y: number;
-  /** Can't be stopped, starts running on its own. */
+  /** Can't be stopped, starts running on its own. Its pace can't be changed either. */
   unstoppable?: boolean;
+  /**
+   * How long one cycle takes at 100% pace, in seconds (default: one tick, 0.5 s).
+   * Inputs are taken when a cycle starts, outputs are given when it ends.
+   */
+  cycle?: number;
   /**
    * Output grows with the stock of a resource above this node's minimum
    * (its `atLeast` for that resource), up to a cap ("size").
@@ -90,10 +95,15 @@ export interface UpgradeDef {
   /** Raises resource storage limits (max) by these amounts. */
   capacity?: CostDef[];
   /**
-   * Shown in the Build panel instead of on a node: home and storage upgrades
-   * that aren't really about one node.
+   * Shown in the Build panel instead of on a node: home, storage and skill
+   * upgrades that aren't really about one node.
    */
   building?: boolean;
+  /**
+   * A skill: 'pace' unlocks the pace slider on every node (10–100%),
+   * 'overclock' lets it go above 100%.
+   */
+  unlocks?: 'pace' | 'overclock';
   /** Buying it ends the game. Its effect is kept secret in the UI. */
   final?: boolean;
 }

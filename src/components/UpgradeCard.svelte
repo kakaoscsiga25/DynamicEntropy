@@ -52,6 +52,11 @@
     {#if upgrade.def.final}
       <li class="secret">Effect: ???</li>
     {/if}
+    {#if upgrade.def.unlocks === 'pace'}
+      <li>Unlocks the <b>pace</b> slider on every node (10–100%): slower makes less per second, but gets up to 30% more out of each input.</li>
+    {:else if upgrade.def.unlocks === 'overclock'}
+      <li>Pace can go up to <b>200%</b>: more per second, but each input gives less (down to 70%).</li>
+    {/if}
     {#each view.capacity as c}
       <li>
         <span class="icon">{c.resource.def.icon}</span>

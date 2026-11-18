@@ -1,19 +1,26 @@
 // Simple automated players for the simulator. They only use what a real player
 // can do: start/stop discovered nodes and buy upgrades.
 
-import { TICKS_PER_SECOND, type Converter, type Game, type Resource } from '../game/engine.ts';
+import { PACE_MIN, TICKS_PER_SECOND, type Converter, type Game, type Resource } from '../game/engine.ts';
 import type { Bot } from './simulate.ts';
 
 const TWIDDLE = 'twiddling_thumbs';
 
-/** Buys the final upgrade when possible, otherwise any other affordable upgrade. */
-function buyEverything(game: Game) {
+/**
+ * Buys the final upgrade when possible, otherwise any other affordable upgrade.
+ * Skills (pace, overclock) only if the bot knows how to use them.
+ */
+function buyEverything(game: Game, skills: string[] = []) {
   const final = game.upgrades.find((u) => u.def.final && u.isBuyable());
   if (final) {
     game.buy(final.id);
     return;
   }
-  for (const u of game.upgrades) if (!u.def.final && u.isBuyable()) game.buy(u.id);
+  for (const u of game.upgrades) {
+    if (u.def.final || !u.isBuyable()) continue;
+    if (u.def.unlocks && !skills.includes(u.def.unlocks)) continue;
+    game.buy(u.id);
+  }
 }
 
 function setRunning(c: Converter, on: boolean) {
@@ -83,12 +90,12 @@ function isLoopFor(c: Converter, r: Resource): boolean {
  * so the Forest regrows), and uses the "starter" node (Garden) only to get the
  * loop going.
  */
-function makePlanner(name: string, micro: boolean, description: string): Bot {
+function makePlanner(name: string, micro: boolean, description: string, skills: string[] = []): Bot {
   return {
     name,
     description,
     act(game) {
-      buyEverything(game);
+      buyEverything(game, skills);
 
       let seen = seenResources.get(game);
       if (!seen) seenResources.set(game, (seen = new Set()));
@@ -123,6 +130,7 @@ function makePlanner(name: string, micro: boolean, description: string): Bot {
       };
       for (const u of game.upgrades) {
         if (u.bought || !u.requirementsMet()) continue;
+        if (u.def.unlocks && !skills.includes(u.def.unlocks)) continue; // won't buy it
         for (const c of u.costs) raise(c.resource, c.amount);
       }
 
@@ -185,6 +193,38 @@ export const planner = makePlanner(
   'Runs nodes needed for the next upgrades (and their supply chain), explores, sleeps when stuck. Does not protect loops.',
 );
 
+/** Planner that also buys the pace skill (used by the pace-aware visitors). */
+const pacePlanner = makePlanner('planner+pace', false, 'Planner that also buys Steady pace.', ['pace']);
+
+/**
+ * How a lazy but sensible player uses the pace slider: a node that eats into a
+ * growing loop's stock (Wood cutting takes the Forest's Plant) is slowed down
+ * until it takes no more than the loop regrows at the current stock, so the
+ * loop never dies (while the loop is dead they run at 100%). Set once per
+ * visit, then left alone.
+ */
+function paceLoops(game: Game) {
+  if (game.paceMax() === 0) return;
+  const nodes = game.converters.filter((c) => game.discovered.has(c.id) && !c.unstoppable);
+  for (const loop of nodes) {
+    if (!loop.growth || loop.stopped) continue;
+    const r = loop.growth.resource;
+    if (!isLoopFor(loop, r)) continue;
+    const need = loop.needs.find((n) => n.resource === r)!;
+    const make = loop.makes.find((m) => m.resource === r)!;
+    const users = nodes.filter((c) => c !== loop && c.needs.some((n) => n.resource === r && n.amount > 0));
+    if (r.amount < need.atLeast + need.amount) {
+      for (const c of users) game.setPace(c.id, 1); // the loop is dead: nothing to protect
+      continue;
+    }
+    const regrowth = ((loop.output(make) - need.amount) * loop.pace) / loop.cycleTicks; // per tick, at the current stock
+    const use = users.reduce((sum, c) => sum + c.needs.find((n) => n.resource === r)!.amount / c.cycleTicks, 0); // per tick at 100%
+    if (use <= 0) continue;
+    const pace = Math.max(PACE_MIN, Math.min(1, Math.floor((regrowth / use) * 10) / 10));
+    for (const c of users) game.setPace(c.id, pace);
+  }
+}
+
 export const micro = makePlanner(
   'micro',
   true,
@@ -196,14 +236,21 @@ export const micro = makePlanner(
  * nodes like the planner (no micromanagement) and leaves Twiddling thumbs on so
  * it can't get stuck awake in between. Nothing changes between visits.
  */
-export function visitor(minutes: number): Bot {
+export function visitor(minutes: number, pace = false): Bot {
   const every = Math.max(1, Math.round(minutes * 60 * TICKS_PER_SECOND));
   return {
-    name: `visit-${minutes}m`,
-    description: `Checks in every ${minutes} minutes: sets nodes like the planner, Twiddling thumbs always on.`,
+    name: `visit-${minutes}m${pace ? '+pace' : ''}`,
+    description:
+      `Checks in every ${minutes} minutes: sets nodes like the planner, Twiddling thumbs always on.` +
+      (pace ? ' Buys Steady pace and slows Wood cutting so a living Forest keeps regrowing.' : ''),
     act(game) {
       if (game.ticks % every !== 0) return;
-      planner.act(game);
+      if (pace) {
+        pacePlanner.act(game);
+        paceLoops(game);
+      } else {
+        planner.act(game);
+      }
       const twiddle = game.converters.find((c) => c.id === TWIDDLE);
       if (twiddle && game.discovered.has(twiddle.id)) setRunning(twiddle, true);
     },
@@ -211,5 +258,5 @@ export function visitor(minutes: number): Bot {
 }
 
 export const BOTS: Record<string, Bot> = Object.fromEntries(
-  [allOn, idle, visitor(30), visitor(10), planner, micro].map((b) => [b.name, b]),
+  [allOn, idle, visitor(30), visitor(10), visitor(30, true), visitor(10, true), planner, micro].map((b) => [b.name, b]),
 );

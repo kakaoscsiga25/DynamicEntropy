@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Converter, Recipe } from '../game/engine';
-  import { ui, select, toggleConverter } from '../ui/session.svelte';
+  import { game, ui, select, toggleConverter } from '../ui/session.svelte';
   import { NODE_W, NODE_H } from '../ui/layout';
   import RecipeChip from './RecipeChip.svelte';
   import { STATE_LABEL } from './states';
@@ -28,7 +28,23 @@
       factor: conv.growthFactor(),
       buyable: conv.upgrades.filter((u) => u.isBuyable()).length,
       open: conv.upgrades.filter((u) => !u.bought).length,
+      pace: conv.pace,
+      pending: conv.pacePending,
+      showPace: !conv.unstoppable && game.paceMax() > 0 && (conv.pace !== 1 || conv.pacePending),
     };
+  });
+
+  // Cycle progress, shown for cycles of 1 s or longer (slow pace or a long cycle).
+  let lastProgress = 0;
+  const bar = $derived.by(() => {
+    ui.frame;
+    const pace = conv.cycle?.pace ?? conv.activePace;
+    if (conv.cycleTicks / pace < 2) return null;
+    // No cycle but running: one just ended this tick.
+    const progress = conv.cycle ? conv.cycle.progress : conv.state === 'ok' ? 1 : 0;
+    const restarted = progress < lastProgress; // jump back without animating
+    lastProgress = progress;
+    return { progress, restarted, paused: conv.state !== 'ok' };
   });
 
   const running = $derived(view.state !== 'stopped');
@@ -68,19 +84,24 @@
   onpointerenter={() => (ui.hoverNode = conv.id)}
   onpointerleave={() => ui.hoverNode === conv.id && (ui.hoverNode = null)}
 >
-  <!-- The colored strip on the left is the on/off switch. -->
+  <!-- The colored strip on the left is the on/off switch; it also shows the pace when it isn't 100%. -->
   {#if conv.unstoppable}
     <span class="power fixed" title="Always on, can't be stopped">∞</span>
   {:else}
+    {@const paceText = view.showPace ? ` · pace ${Math.round(view.pace * 100)}%${view.pending ? ', applies when the next cycle starts' : ''}` : ''}
     <button
       class="power"
       class:on={running}
       tabindex="-1"
-      title={running ? `${STATE_LABEL[view.state]} · click to stop` : 'Stopped · click to start'}
+      title={(running ? `${STATE_LABEL[view.state]} · click to stop` : 'Stopped · click to start') + paceText}
       aria-label={running ? 'Stop' : 'Start'}
       onclick={onPower}
     >
       <span class="icon">{running ? '❚❚' : '▶'}</span>
+      {#if view.showPace}
+        <span class="pace" class:over={view.pace > 1} class:pending={view.pending}>{Math.round(view.pace * 100)}%</span>
+        {#if view.pending}<span class="wait">⏳</span>{/if}
+      {/if}
     </button>
   {/if}
 
@@ -112,12 +133,17 @@
             recipe={r}
             side="out"
             full={view.state === 'full'}
-            value={conv.growth && !r.byproduct ? conv.output(r, view.factor) : undefined}
+            value={!r.byproduct && (conv.growth || view.pace !== 1) ? conv.output(r, view.factor) : undefined}
           />
         {/each}
       {/if}
     </div>
   </div>
+  {#if bar}
+    <span class="cycle" class:paused={bar.paused} aria-hidden="true">
+      <span class:restarted={bar.restarted} style="width: {bar.progress * 100}%"></span>
+    </span>
+  {/if}
 </div>
 
 <style>
@@ -175,8 +201,11 @@
     color: var(--state);
     font-size: 11px;
     cursor: pointer;
-    display: grid;
-    place-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
     transition: background 0.15s, color 0.15s;
   }
   .power:hover {
@@ -240,7 +269,52 @@
     color: var(--ok);
   }
   :global(.far) .growth {
-    font-size: 16px;
+    display: none; /* overview: the name matters more */
+  }
+  /* pace shown in the strip, under the on/off icon */
+  .pace {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    color: #bfe3ff;
+  }
+  .pace.over {
+    color: #ffd2b0;
+  }
+  .pace.pending {
+    color: var(--muted);
+  }
+  .wait {
+    font-size: 10px;
+    line-height: 1;
+  }
+  :global(.far) .pace {
+    font-size: 13px;
+  }
+  .cycle {
+    position: absolute;
+    left: 30px;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: color-mix(in srgb, var(--state) 15%, transparent);
+  }
+  .cycle span {
+    display: block;
+    height: 100%;
+    background: var(--state);
+    transition: width 0.5s linear;
+  }
+  .cycle span.restarted {
+    transition: none;
+  }
+  .cycle.paused span {
+    opacity: 0.5;
+  }
+  :global(.far) .cycle {
+    left: 46px;
+    height: 5px;
   }
   .badge {
     flex: none;

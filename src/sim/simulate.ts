@@ -85,7 +85,7 @@ export function simulate(bot: Bot, opts: SimOptions): SimResult {
       if (!game.discovered.has(c.id)) continue;
       let s = nodes.get(c.id);
       if (!s) {
-        s = { name: c.name, states: { ok: 0, stopped: 0, noInput: 0, full: 0 }, blockedBy: new Map() };
+        s = { name: c.name, states: { ok: 0, stopped: 0, noInput: 0, full: 0, interrupted: 0 }, blockedBy: new Map() };
         nodes.set(c.id, s);
       }
       s.name = c.name;

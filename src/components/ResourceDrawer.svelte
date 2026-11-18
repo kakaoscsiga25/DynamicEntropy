@@ -2,7 +2,6 @@
   import type { Converter, ConverterState } from '../game/engine';
   import { game, ui, select, toggleConverter, resourceTrend } from '../ui/session.svelte';
   import { num } from '../ui/format';
-  import { STATE_LABEL } from './states';
 
   let { id }: { id: string } = $props();
 
@@ -108,7 +107,7 @@
             {row.state === 'stopped' ? '▶' : '❚❚'}
           </button>
         {/if}
-        <button class="link" onclick={() => select(row.conv.id)} title="{STATE_LABEL[row.state]} · open details">
+        <button class="link" onclick={() => select(row.conv.id)} title="Open details">
           <span class="name">{row.name}</span>
           {#if row.note}<span class="note">{row.note}</span>{/if}
         </button>
@@ -278,10 +277,6 @@
     background: var(--panel-2);
     border-left: 3px solid var(--state, var(--border));
   }
-  .state-ok { --state: var(--ok); }
-  .state-stopped { --state: var(--stopped); }
-  .state-noInput { --state: var(--warn); }
-  .state-full { --state: var(--full); }
   .power {
     flex: none;
     width: 30px;

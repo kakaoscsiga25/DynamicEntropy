@@ -111,12 +111,17 @@ function makePlanner(name: string, micro: boolean, description: string, skills: 
           for (const n of c.needs) {
             if (!isLoopFor(c, n.resource)) continue;
             const level = c.growth?.resource === n.resource ? Math.max(n.atLeast, c.growthFullAt()) : n.atLeast;
-            // Leave room below the storage limit to actually harvest (e.g. Wood cutting takes 5 Plant).
+            // Leave room below the storage limit to actually harvest (e.g. Wood cutting takes 5 Plant),
+            // and for the loop's own output: a finished cycle waits until all of it fits.
             const biggestUse = Math.max(
               0,
               ...candidates.filter((o) => o !== c).flatMap((o) => o.needs.filter((m) => m.resource === n.resource).map((m) => m.amount)),
             );
-            const room = n.resource.max - 2 * biggestUse - 1;
+            const loopOutput = Math.max(
+              0,
+              ...c.makes.filter((m) => m.resource === n.resource).map((m) => c.output(m, c.growth?.maxFactor ?? 1)),
+            );
+            const room = n.resource.max - 2 * biggestUse - loopOutput - 1;
             protect.set(n.resource, Math.max(protect.get(n.resource) ?? 0, Math.max(n.atLeast, Math.min(level, room))));
           }
         }
@@ -220,7 +225,7 @@ function paceLoops(game: Game) {
     const regrowth = ((loop.output(make) - need.amount) * loop.pace) / loop.cycleTicks; // per tick, at the current stock
     const use = users.reduce((sum, c) => sum + c.needs.find((n) => n.resource === r)!.amount / c.cycleTicks, 0); // per tick at 100%
     if (use <= 0) continue;
-    const pace = Math.max(PACE_MIN, Math.min(1, Math.floor((regrowth / use) * 10) / 10));
+    const pace = Math.max(PACE_MIN, Math.min(1, Math.floor((regrowth / use) * 100) / 100));
     for (const c of users) game.setPace(c.id, pace);
   }
 }

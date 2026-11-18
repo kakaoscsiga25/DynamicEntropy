@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Converter, Recipe } from '../game/engine';
-  import { game, ui, select, toggleConverter } from '../ui/session.svelte';
+  import { game, ui, select, toggleConverter, setPace } from '../ui/session.svelte';
+  import { PACE_MIN, PACE_STEP, TICK_MS } from '../game/engine';
   import { NODE_W, NODE_H } from '../ui/layout';
   import RecipeChip from './RecipeChip.svelte';
   import { STATE_LABEL } from './states';
@@ -24,28 +25,36 @@
       state: conv.state,
       needs: [...conv.needs],
       makes: [...conv.makes],
-      blocking: new Set<Recipe>(conv.state === 'noInput' ? conv.blockingNeeds() : []),
+      // Inputs that keep the cycle from starting / going on, outputs that don't fit.
+      bad: new Set<Recipe>(
+        conv.state === 'noInput' ? conv.blockingNeeds() : conv.state === 'interrupted' ? conv.interruptingNeeds() : [],
+      ),
+      blockedOut: new Set<Recipe>(conv.state === 'full' ? conv.blockedOutputs() : []),
       factor: conv.growthFactor(),
       buyable: conv.upgrades.filter((u) => u.isBuyable()).length,
       open: conv.upgrades.filter((u) => !u.bought).length,
       pace: conv.pace,
       pending: conv.pacePending,
+      paceMax: game.paceMax(),
+      /** The pace slider (after the Steady pace skill). */
+      slider: !conv.unstoppable && game.paceMax() > 0,
+      /** Pace shown in the strip in the zoomed-out overview, where there's no slider. */
       showPace: !conv.unstoppable && game.paceMax() > 0 && (conv.pace !== 1 || conv.pacePending),
     };
   });
 
-  // Cycle progress, shown for cycles of 1 s or longer (slow pace or a long cycle).
+  // Progress of the current cycle (bottom edge of the card).
   let lastProgress = 0;
   const bar = $derived.by(() => {
     ui.frame;
-    const pace = conv.cycle?.pace ?? conv.activePace;
-    if (conv.cycleTicks / pace < 2) return null;
     // No cycle but running: one just ended this tick.
     const progress = conv.cycle ? conv.cycle.progress : conv.state === 'ok' ? 1 : 0;
     const restarted = progress < lastProgress; // jump back without animating
     lastProgress = progress;
-    return { progress, restarted, paused: conv.state !== 'ok' };
+    return { progress, restarted };
   });
+
+  const pct = $derived(`${Math.round(view.pace * 100)}%`);
 
   const running = $derived(view.state !== 'stopped');
 
@@ -88,12 +97,11 @@
   {#if conv.unstoppable}
     <span class="power fixed" title="Always on, can't be stopped">∞</span>
   {:else}
-    {@const paceText = view.showPace ? ` · pace ${Math.round(view.pace * 100)}%${view.pending ? ', applies when the next cycle starts' : ''}` : ''}
     <button
       class="power"
       class:on={running}
       tabindex="-1"
-      title={(running ? `${STATE_LABEL[view.state]} · click to stop` : 'Stopped · click to start') + paceText}
+      title={running ? 'Click to stop' : 'Click to start'}
       aria-label={running ? 'Stop' : 'Start'}
       onclick={onPower}
     >
@@ -112,7 +120,7 @@
         <span
           class="growth"
           class:max={view.factor >= conv.growth.maxFactor - 1e-9}
-          title="Output ×{view.factor.toFixed(1)} (max ×{conv.growth.maxFactor}): grows with {conv.growth.resource.name} above {conv.growthThreshold()}"
+          title="Output grows with {conv.growth.resource.name} above {conv.growthThreshold()}, up to ×{conv.growth.maxFactor}"
           >×{view.factor.toFixed(1)}</span
         >
       {/if}
@@ -122,28 +130,53 @@
         <span class="badge" title="{view.open} upgrade(s) available later">⬆ {view.open}</span>
       {/if}
     </div>
+    <!-- What goes in (left), what comes out (right): one resource per row. -->
     <div class="io">
-      {#each view.needs as r (r)}
-        <RecipeChip recipe={r} side="in" bad={view.blocking.has(r)} />
-      {/each}
-      {#if view.makes.length > 0}
-        <span class="arrow">→</span>
+      <div class="tbl">
+        {#each view.needs as r (r)}
+          <RecipeChip recipe={r} side="in" bad={view.bad.has(r)} />
+        {/each}
+      </div>
+      <span class="arrow">→</span>
+      <div class="tbl">
         {#each view.makes as r (r)}
           <RecipeChip
             recipe={r}
             side="out"
-            full={view.state === 'full'}
+            full={view.blockedOut.has(r)}
             value={!r.byproduct && (conv.growth || view.pace !== 1) ? conv.output(r, view.factor) : undefined}
           />
+        {:else}
+          <span class="nothing" title="Makes nothing">–</span>
         {/each}
-      {/if}
+      </div>
     </div>
+    {#if view.slider}
+      <div class="pace-row">
+        <input
+          type="range"
+          min={PACE_MIN}
+          max={view.paceMax}
+          step={PACE_STEP}
+          value={view.pace}
+          aria-label="{view.name} pace"
+          title="Pace: slower gets more out of each input{view.paceMax > 1 ? ', faster makes more per second' : ''}"
+          onclick={(e) => e.stopPropagation()}
+          onkeydown={(e) => e.stopPropagation()}
+          oninput={(e) => setPace(conv.id, Number(e.currentTarget.value))}
+        />
+        <span
+          class="pv"
+          class:pending={view.pending}
+          class:over={view.pace > 1}
+          title={view.pending ? "This cycle keeps the faster pace's output; from the next cycle it's this one" : ''}>{view.pending ? '⏳' : ''}{pct}</span
+        >
+      </div>
+    {/if}
   </div>
-  {#if bar}
-    <span class="cycle" class:paused={bar.paused} aria-hidden="true">
-      <span class:restarted={bar.restarted} style="width: {bar.progress * 100}%"></span>
-    </span>
-  {/if}
+  <span class="cycle" aria-hidden="true">
+    <span class:restarted={bar.restarted} style="width: {bar.progress * 100}%; transition-duration: {TICK_MS}ms"></span>
+  </span>
 </div>
 
 <style>
@@ -185,10 +218,6 @@
     box-shadow: 0 0 0 2px var(--warn), 0 0 18px color-mix(in srgb, var(--warn) 45%, transparent);
   }
 
-  .state-ok { --state: var(--ok); }
-  .state-stopped { --state: var(--stopped); }
-  .state-noInput { --state: var(--warn); }
-  .state-full { --state: var(--full); }
 
   /* ---- on/off strip */
   .power {
@@ -271,7 +300,15 @@
   :global(.far) .growth {
     display: none; /* overview: the name matters more */
   }
-  /* pace shown in the strip, under the on/off icon */
+  /* pace in the strip: only in the zoomed-out overview (no slider there) */
+  .power .pace,
+  .power .wait {
+    display: none;
+  }
+  :global(.far) .power .pace,
+  :global(.far) .power .wait {
+    display: block;
+  }
   .pace {
     font-size: 9.5px;
     font-weight: 700;
@@ -304,12 +341,15 @@
     display: block;
     height: 100%;
     background: var(--state);
-    transition: width 0.5s linear;
+    transition-property: width;
+    transition-timing-function: linear;
   }
   .cycle span.restarted {
     transition: none;
   }
-  .cycle.paused span {
+  /* Stopped: the whole card is pale. */
+  .state-stopped .body,
+  .state-stopped .cycle {
     opacity: 0.5;
   }
   :global(.far) .cycle {
@@ -332,15 +372,26 @@
     box-shadow: 0 0 10px color-mix(in srgb, var(--upgrade) 60%, transparent);
   }
   .io {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 12px 1fr;
+    column-gap: 5px;
     align-items: center;
+  }
+  .tbl {
+    display: flex;
+    flex-direction: column;
     gap: 3px;
-    flex-wrap: wrap;
+    min-width: 0;
   }
   .arrow {
     color: var(--muted);
-    margin: 0 1px;
     font-size: 12px;
+    text-align: center;
+  }
+  .nothing {
+    color: var(--muted);
+    font-size: 12px;
+    padding-left: 6px;
   }
 
   /* ---- Overview ("far") zoom: no chips, big names, state shown as card color. */
@@ -358,8 +409,38 @@
   :global(.far) .body {
     justify-content: center;
   }
-  :global(.far) .io {
+  :global(.far) .io,
+  :global(.far) .pace-row {
     display: none;
+  }
+  .pace-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: -2px;
+  }
+  .pace-row input {
+    flex: 1;
+    min-width: 0;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .pv {
+    flex: none;
+    width: 6.5ch;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #bfe3ff;
+  }
+  .pv.over {
+    color: #ffd2b0;
+  }
+  .pv.pending {
+    color: var(--muted);
   }
   :global(.far) .name {
     font-size: 22px;

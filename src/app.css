@@ -18,6 +18,13 @@
   --upgrade: #8fd3ff;
   --dream: #b48cff;
 
+  /* Node states = where a node is in its cycle (see states.ts). */
+  --st-wait: #ff5d6c; /* can't start: waiting for input */
+  --st-run: #4cd06d; /* running */
+  --st-int: #b5d64a; /* interrupted (asleep, a condition broke): goes on later */
+  --st-full: #ff9a3c; /* done, waiting for room in storage */
+  --st-off: #7c829f; /* stopped by the player */
+
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Color Emoji', sans-serif;
   font-size: 14px;
   line-height: 1.35;
@@ -39,6 +46,13 @@ body {
 button {
   font: inherit;
 }
+
+/* Node state colors: an element with one of these classes gets --state. */
+.state-noInput { --state: var(--st-wait); }
+.state-ok { --state: var(--st-run); }
+.state-interrupted { --state: var(--st-int); }
+.state-full { --state: var(--st-full); }
+.state-stopped { --state: var(--st-off); }
 
 :focus-visible {
   outline: 2px solid var(--upgrade);

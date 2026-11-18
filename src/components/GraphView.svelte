@@ -3,11 +3,13 @@
   import { game, ui, select, setRegionRunning } from '../ui/session.svelte';
   import { NODE_H, NODE_W, buildEdges, neighborMap, regionBoxes, worldBounds, type Edge } from '../ui/layout';
   import NodeCard from './NodeCard.svelte';
+  import { STATE_LABEL, STATE_ORDER } from './states';
 
   const MIN_ZOOM = 0.3;
   const MAX_ZOOM = 1.8;
   /** Below this zoom the cards switch to a simplified, bigger-text "overview" look. */
-  const FAR_ZOOM = 0.8;
+  /** Below this zoom the cards collapse to big names (overview); detailed above it. */
+  const FAR_ZOOM = 0.42;
 
   const edges = buildEdges(game);
   const neighbors = neighborMap(edges);
@@ -16,9 +18,14 @@
   let viewport: HTMLDivElement;
   let view = $state({ x: 0, y: 0, k: 1 });
 
+  // Same array until something new is discovered, so the islands aren't recomputed every tick.
+  let discoveredCache: typeof game.converters = [];
   const discovered = $derived.by(() => {
     ui.frame;
-    return game.converters.filter((c) => game.discovered.has(c.id));
+    if (discoveredCache.length !== game.discovered.size) {
+      discoveredCache = game.converters.filter((c) => game.discovered.has(c.id));
+    }
+    return discoveredCache;
   });
   const boxes = $derived(
     regionBoxes(game, discovered).map((b) => ({
@@ -251,10 +258,9 @@
   </div>
 
   <div class="legend" aria-label="Legend">
-    <span><i class="sw ok"></i>Running</span>
-    <span><i class="sw warn"></i>Waiting for input</span>
-    <span><i class="sw full"></i>Output full</span>
-    <span><i class="sw stopped"></i>Stopped</span>
+    {#each STATE_ORDER as s}
+      <span><i class="sw state-{s}"></i>{STATE_LABEL[s]}</span>
+    {/each}
     <span class="sep"></span>
     <span><i class="ln"></i>Flow</span>
     <span><i class="ln dashed"></i>Needs stock</span>
@@ -446,10 +452,9 @@
     height: 8px;
     border-radius: 50%;
   }
-  .sw.ok { background: var(--ok); }
-  .sw.warn { background: var(--warn); }
-  .sw.full { background: var(--full); }
-  .sw.stopped { background: var(--stopped); }
+  .sw {
+    background: var(--state);
+  }
   .ln {
     width: 18px;
     border-top: 2px solid var(--muted);

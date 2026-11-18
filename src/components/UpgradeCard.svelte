@@ -94,7 +94,7 @@
 
   <div class="costs">
     {#each view.costs as c}
-      <span class="cost" class:ok={c.ok} title="{c.name}: have {stock(c.have)}, need {num(c.need)}">
+      <span class="cost" class:ok={c.ok} title="{c.name}: needs {num(c.need)}">
         {c.icon} <b>{num(c.need)}</b>
         {#if !c.ok}<small>({stock(c.have)})</small>{/if}
       </span>

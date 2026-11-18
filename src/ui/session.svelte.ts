@@ -8,8 +8,10 @@ import { clearSave, loadSave, serialize, writeSave, type KeyValueStore } from '.
 export const APP_VERSION = __APP_VERSION__;
 export const DEV = new URLSearchParams(location.search).has('dev');
 const AUTOSAVE_SECONDS = 60;
-/** The "+x/s" rate shows the change over the last second (2 ticks): things change fast. */
+/** The "+x/s" rate shows the change over the last second (10 ticks): things change fast. */
 const RATE_WINDOW_TICKS = TICKS_PER_SECOND;
+/** Dev "10×" mode runs this many ticks per real tick. */
+const FAST_TICKS = 10;
 
 export const game = new Game();
 
@@ -87,21 +89,22 @@ export function resourceTrend(index: number): Trend {
 let tickTimer: ReturnType<typeof setInterval> | undefined;
 
 function step() {
-  const found = game.tick();
-  recentDeltas.push(game.resources.map((r) => r.lastFlow));
-  if (recentDeltas.length > RATE_WINDOW_TICKS) recentDeltas.shift();
-  for (const id of found) toast(`Discovered: ${game.converter(id).name}`);
-  refresh();
+  for (let i = 0; i < (ui.fast ? FAST_TICKS : 1); i++) {
+    const found = game.tick();
+    recentDeltas.push(game.resources.map((r) => r.lastFlow));
+    if (recentDeltas.length > RATE_WINDOW_TICKS) recentDeltas.shift();
+    for (const id of found) toast(`Discovered: ${game.converter(id).name}`);
+  }
+  refresh(); // once per real tick, even in fast mode
 }
 
 function scheduleTicks() {
   clearInterval(tickTimer);
-  tickTimer = setInterval(step, ui.fast ? TICK_MS / 10 : TICK_MS);
+  tickTimer = setInterval(step, TICK_MS);
 }
 
 export function setFast(fast: boolean) {
   ui.fast = fast;
-  scheduleTicks();
 }
 
 // ------------------------------------------------------------ playtime & saving

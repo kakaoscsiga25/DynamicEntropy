@@ -67,14 +67,12 @@ export function restore(game: Game, save: SaveData): void {
   for (const [id, pace] of Object.entries(save.pace ?? {})) {
     if (game.hasConverter(id)) game.setPace(id, pace);
   }
-  for (const c of game.converters) c.activePace = c.pace;
   for (const [id, cycle] of Object.entries(save.cycles ?? {})) {
     if (!game.hasConverter(id)) continue;
     const { progress, pace, growth } = cycle;
-    if (![progress, pace, growth].every(Number.isFinite)) continue;
-    const c = game.converter(id);
-    c.cycle = { progress: Math.min(1, Math.max(0, progress)), pace, growth };
-    c.activePace = pace;
+    const outPace = cycle.outPace ?? pace; // missing in saves made before 1% steps
+    if (![progress, pace, growth, outPace].every(Number.isFinite)) continue;
+    game.converter(id).cycle = { progress: Math.min(1, Math.max(0, progress)), pace, outPace, growth };
   }
   game.updateDiscovery();
 }

@@ -6,16 +6,18 @@ import type { ChangeDef, ConverterDef, GameData, RecipeDef, ResourceDef, Upgrade
 import { DATA } from './data.ts';
 
 /** The game clock: everything advances once per tick. */
-export const TICK_MS = 500;
+export const TICK_MS = 100;
 export const TICKS_PER_SECOND = 1000 / TICK_MS;
+/** A node's cycle at 100% pace, unless its data says otherwise. */
+export const DEFAULT_CYCLE_SECONDS = 1;
 
 const EPS = 1e-10;
 
 // ---------------------------------------------------------------- Pace
 
-/** The pace slider goes from 10% to 100% (200% with overclocking), in 10% steps. */
+/** The pace slider goes from 10% to 100% (200% with overclocking), in 1% steps. */
 export const PACE_MIN = 0.1;
-export const PACE_STEP = 0.1;
+export const PACE_STEP = 0.01;
 export const PACE_MAX = 1;
 export const OVERCLOCK_MAX = 2;
 
@@ -42,8 +44,14 @@ export interface Growth {
 export interface Cycle {
   /** 0..1 */
   progress: number;
-  /** Pace it runs at (set when it started). */
+  /** Pace it runs at now (a slider change applies at once). */
   pace: number;
+  /**
+   * The pace whose efficiency the outputs get: the fastest pace this cycle ran at.
+   * Slowing down mid-cycle doesn't make it more efficient (no cheating); the new
+   * pace's efficiency applies from the next cycle.
+   */
+  outPace: number;
   /** Growth factor measured when it started. */
   growth: number;
 }
@@ -148,14 +156,20 @@ export class Recipe {
 
 // ---------------------------------------------------------------- Converter
 
+/**
+ * Where a node is in its cycle (loop):
+ * start (take the inputs) → run → end (put out the outputs) → start again.
+ */
 export type ConverterState =
-  | 'ok'       // running
-  | 'stopped'  // switched off by the player (a cycle in progress is kept)
-  | 'noInput'  // not enough input to start a cycle, or a condition stopped the current one
-  | 'full';    // every output is at max
+  | 'noInput'      // can't start a cycle: not enough input (or a condition fails, or it needs Stamina while you sleep)
+  | 'ok'           // a cycle is running
+  | 'interrupted'  // the running cycle had to stop for now (you fell asleep, a condition broke); it goes on later
+  | 'full'         // the cycle is done, but its outputs don't fit in storage yet: it waits for room
+  | 'stopped';     // switched off by the player (a cycle in progress is kept)
 
 export class Converter {
   readonly def: ConverterDef;
+  private readonly game: Game;
   name: string;
   needs: Recipe[];
   makes: Recipe[];
@@ -165,19 +179,18 @@ export class Converter {
   growth: Growth | null;
   /** Length of one cycle at 100% pace, in ticks (at least 1). */
   readonly cycleTicks: number;
-  /** Pace set by the player. A change applies when the next cycle starts. */
+  /** Pace set by the player. Its speed applies at once, its efficiency from the next cycle. */
   pace = 1;
-  /** Pace of the cycle that started last (what's really running). */
-  activePace = 1;
   /** The cycle in progress, or null between cycles. */
   cycle: Cycle | null = null;
 
   constructor(def: ConverterDef, game: Game) {
     this.def = def;
+    this.game = game;
     this.name = def.name;
     this.needs = def.needs.map((r) => game.recipe(r));
     this.makes = def.makes.map((r) => game.recipe(r));
-    this.cycleTicks = Math.max(1, (def.cycle ?? 0) * TICKS_PER_SECOND);
+    this.cycleTicks = Math.max(1, (def.cycle ?? DEFAULT_CYCLE_SECONDS) * TICKS_PER_SECOND);
     this.state = def.unstoppable ? 'noInput' : 'stopped';
     this.growth = def.growth
       ? { resource: game.resource(def.growth.res), perUnit: def.growth.perUnit, maxFactor: def.growth.maxFactor }
@@ -226,9 +239,28 @@ export class Converter {
     return this.cycleTicks / pace / TICKS_PER_SECOND;
   }
 
-  /** The pace slider was moved, but the running cycle still uses the old pace. */
+  /** Uses up something that only works while awake (Stamina), so it pauses while you sleep. */
+  get needsAwake(): boolean {
+    return this.needs.some((r) => r.amount > 0 && r.resource.def.awake);
+  }
+
+  /** Makes or uses the dream resource (Sleep, Wake up): while it works, you're asleep. */
+  get dreams(): boolean {
+    return [...this.needs, ...this.makes].some((r) => r.amount > 0 && r.resource.def.dream);
+  }
+
+  /** The running cycle's output uses another (faster) pace's efficiency than the slider's. */
   get pacePending(): boolean {
-    return Math.abs(this.pace - this.activePace) > 1e-9;
+    return !!this.cycle && Math.abs(this.cycle.outPace - this.pace) > 1e-9;
+  }
+
+  /** Changes the pace (already checked and rounded): the running cycle speeds up / slows down at once. */
+  setPace(pace: number): void {
+    this.pace = pace;
+    if (this.cycle) {
+      this.cycle.pace = pace;
+      this.cycle.outPace = Math.max(this.cycle.outPace, pace);
+    }
   }
 
   stop(): void {
@@ -246,66 +278,100 @@ export class Converter {
     return this.needs.some((r) => r.resource.amount <= 0 && r.amount !== 0);
   }
 
-  /** Recipe lines that currently block this converter. */
+  /** Can't use its Stamina now: you're asleep. */
+  get sleeping(): boolean {
+    return this.needsAwake && this.game.asleep();
+  }
+
+  /** Recipe lines that keep a new cycle from starting. */
   blockingNeeds(): Recipe[] {
-    return this.needs.filter((r) => !r.resource.satisfies(r));
+    const sleeping = this.sleeping;
+    return this.needs.filter((r) => !r.resource.satisfies(r) || (sleeping && r.amount > 0 && r.resource.def.awake));
+  }
+
+  /** Recipe lines that interrupt the running cycle (Stamina while you sleep, broken conditions). */
+  interruptingNeeds(): Recipe[] {
+    const sleeping = this.sleeping;
+    return this.needs.filter((r) => !r.resource.holds(r) || (sleeping && r.amount > 0 && r.resource.def.awake));
+  }
+
+  /** Outputs that don't fit in storage right now (what a finished cycle waits for). */
+  blockedOutputs(): Recipe[] {
+    if (this.unstoppable) return [];
+    const c = this.cycle;
+    return this.makes.filter(
+      (r) => !r.byproduct && r.resource.amount + r.resource.pending + this.output(r, c?.growth, c?.outPace) > r.resource.max + EPS,
+    );
   }
 
   /**
-   * One tick of work. A node works in its own loop: when a cycle starts it takes
-   * its inputs, the cycle advances every tick (faster or slower with the pace),
-   * and when it ends the outputs are given. Leftover time starts the next cycle,
-   * so a fast pace can finish several cycles in one tick. Conditions (minimum or
-   * maximum stocks) are checked every tick; while one fails, the cycle waits.
-   * With a one-tick cycle at 100% this is exactly the old "once per tick" rule.
+   * One tick of work. A node works in its own loop (a cycle):
+   * 1. start: take the inputs. If they aren't there: 'noInput', try again next tick.
+   * 2. run: the cycle advances every tick (faster or slower with the pace).
+   *    Conditions (minimum / maximum stocks) are checked every tick, and nodes
+   *    that use Stamina can't work while you sleep: then it's 'interrupted' and
+   *    goes on later. (A cycle that took nothing, like Sleep, is simply dropped.)
+   * 3. end: put out the outputs if they fit in storage, else wait ('full').
+   *    Byproducts, and Sleep / Wake up, never wait: they fill up to the limit.
+   * Leftover time starts the next cycle, so a fast pace can do several per tick.
    */
   update(): void {
     if (this.state === 'stopped') return;
     let time = 1; // ticks of work left in this tick
-    for (let guard = 0; guard < 1000 && time > EPS; guard++) {
+    for (let guard = 0; guard < 1000; guard++) {
       if (!this.cycle) {
-        if (!this.startCycle()) return;
-      } else if (!this.needs.every((r) => r.resource.holds(r))) {
-        this.state = 'noInput';
+        if (time <= EPS || !this.startCycle()) return;
+      }
+      const cycle = this.cycle!;
+      if (cycle.progress < 1) {
+        if (time <= EPS) return;
+        if (this.interruptingNeeds().length > 0) {
+          if (this.needs.every((r) => r.amount <= 0)) {
+            this.cycle = null; // nothing was taken: nothing to keep
+            this.state = 'noInput';
+          } else {
+            this.state = 'interrupted';
+          }
+          return;
+        }
+        this.state = 'ok';
+        const perTick = cycle.pace / this.cycleTicks; // share of the cycle done per tick
+        const step = Math.min(1 - cycle.progress, time * perTick);
+        cycle.progress += step;
+        time -= step / perTick;
+        this.addFlow(cycle, step);
+        if (cycle.progress < 1 - EPS) return;
+        cycle.progress = 1;
+      }
+      if (this.blockedOutputs().length > 0) {
+        this.state = 'full';
         return;
       }
-      this.state = 'ok';
-      const cycle = this.cycle!;
-      const perTick = cycle.pace / this.cycleTicks; // share of the cycle done per tick
-      const step = Math.min(1 - cycle.progress, time * perTick);
-      cycle.progress += step;
-      time -= step / perTick;
-      this.addFlow(cycle, step);
-      if (cycle.progress >= 1 - EPS) this.finishCycle();
+      this.finishCycle();
     }
   }
 
   private startCycle(): boolean {
-    if (this.makes.length > 0 && this.makes.every((r) => r.resource.amount >= r.resource.max)) {
-      this.state = 'full';
-      return false;
-    }
-    if (!this.needs.every((r) => r.resource.satisfies(r))) {
+    if (this.sleeping || !this.needs.every((r) => r.resource.satisfies(r))) {
       this.state = 'noInput';
       return false;
     }
     // The growth factor is measured before this cycle's inputs are taken.
     const growth = this.growthFactor();
     for (const r of this.needs) r.resource.take(r.amount);
-    this.cycle = { progress: 0, pace: this.pace, growth };
-    this.activePace = this.pace;
+    this.cycle = { progress: 0, pace: this.pace, outPace: this.pace, growth };
     return true;
   }
 
   private finishCycle(): void {
     const c = this.cycle!;
-    for (const r of this.makes) r.resource.give(this.output(r, c.growth, c.pace));
+    for (const r of this.makes) r.resource.give(this.output(r, c.growth, c.outPace));
     this.cycle = null;
   }
 
   private addFlow(c: Cycle, share: number): void {
     for (const r of this.needs) if (r.amount > 0) r.resource.flow -= r.amount * share;
-    for (const r of this.makes) r.resource.flow += this.output(r, c.growth, c.pace) * share;
+    for (const r of this.makes) r.resource.flow += this.output(r, c.growth, c.outPace) * share;
   }
 }
 
@@ -478,6 +544,9 @@ export class Game {
   /** Bought upgrade ids, in buying order (saved, replayed on load). */
   readonly boughtOrder: string[] = [];
   ticks = 0;
+  /** What tells whether you're asleep (see asleep()). */
+  private readonly dreamResources: Resource[];
+  private readonly dreamNodes: Converter[];
 
   private resourceMap = new Map<string, Resource>();
   private converterMap = new Map<string, Converter>();
@@ -504,6 +573,8 @@ export class Game {
       u.host?.upgrades.push(u);
     }
     this.buildings = this.upgrades.filter((u) => u.def.building);
+    this.dreamResources = this.resources.filter((r) => r.def.dream);
+    this.dreamNodes = this.converters.filter((c) => c.dreams);
 
     this.updateDiscovery();
   }
@@ -549,6 +620,14 @@ export class Game {
     return this.updateDiscovery();
   }
 
+  /**
+   * You're asleep while you have any Dreaming, or while Sleep or Wake up is
+   * working. (They run first every tick, so the other nodes see their current state.)
+   */
+  asleep(): boolean {
+    return this.dreamResources.some((r) => r.amount > 0) || this.dreamNodes.some((c) => c.state === 'ok');
+  }
+
   /** Highest pace the player can set: 0 while the slider is locked, 1, or 2 with overclocking. */
   paceMax(): number {
     const has = (what: string) => this.upgrades.some((u) => u.bought && u.def.unlocks === what);
@@ -556,13 +635,16 @@ export class Game {
     return has('pace') ? PACE_MAX : 0;
   }
 
-  /** Sets a node's pace (rounded to 10% steps, within the unlocked range). It applies from the next cycle. */
+  /**
+   * Sets a node's pace (1% steps, within the unlocked range). The speed changes at
+   * once; a running cycle's output gets the faster pace's efficiency (see Cycle.outPace).
+   */
   setPace(id: string, pace: number): boolean {
     const c = this.converter(id);
     const max = this.paceMax();
     if (c.unstoppable || max === 0 || !Number.isFinite(pace)) return false;
-    const steps = Math.round(1 / PACE_STEP); // round to whole steps without float noise (0.3, not 0.30000000000000004)
-    c.pace = Math.min(max, Math.max(PACE_MIN, Math.round(pace * steps) / steps));
+    const steps = Math.round(1 / PACE_STEP); // round to whole steps without float noise (0.33, not 0.33000000000000002)
+    c.setPace(Math.min(max, Math.max(PACE_MIN, Math.round(pace * steps) / steps)));
     return true;
   }
 

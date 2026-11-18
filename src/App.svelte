@@ -62,12 +62,12 @@
     <div class="howto">
       <p class="lead">You are dreaming. Build up your dream world until you can finally <b>wake up</b>.</p>
       <ul>
-        <li><b>Nodes</b> turn resources into other resources in cycles (0.5 s): the inputs go in when a cycle starts, the outputs come out when it ends. Their chips show what goes in <span class="muted">→</span> what comes out.</li>
+        <li><b>Nodes</b> turn resources into other resources in cycles (1 s, the bar at the bottom of the node): the inputs go in when a cycle starts, the outputs come out when it ends. Their chips show what goes in <span class="muted">→</span> what comes out.</li>
         <li><b>Start / stop</b> a node by clicking the <b>colored strip</b> on its left side (or right-click it, or press Space when it's selected). <b>▶ all / ❚❚ all</b> next to an island's name switches the whole island.</li>
         <li><b>Click</b> a node to see its details and buy its <b>upgrades</b>. A glowing <span class="badge">⬆ 1</span> means you can afford one.</li>
         <li><b>Build</b> (top bar) has your home and storage buildings: a better place to sleep, and room for more of each resource. Later also <b>skills</b>, like setting each node's <b>pace</b>: slower gets more out of each input.</li>
-        <li><b>Eating bread</b> gives Stamina while you're awake.</li>
-        <li>A node only works when it has enough input <span class="sw warn"></span>, and pauses when its outputs are full <span class="sw full"></span>.</li>
+        <li><b>⚡ Stamina</b> only works while you're awake: when it runs out you fall asleep, and the nodes that use it pause until you wake up. <b>Eating bread</b> gives Stamina while you're awake.</li>
+        <li>A node's color tells where it is in its cycle: it can't start without its inputs <span class="sw state-noInput"></span>, then it runs <span class="sw state-ok"></span>, may get interrupted, e.g. when you fall asleep <span class="sw state-interrupted"></span>, and at the end waits until its output fits in storage <span class="sw state-full"></span>. Stopped nodes are grey <span class="sw state-stopped"></span>.</li>
         <li><b>Lines</b> show resources flowing between nodes: the icon in the middle tells what flows, the arrow where. Lines of common resources (⚡ Stamina, 💧 Water, 🔥 Fire) only appear while you hover or select a node, to keep the map tidy.</li>
         <li><b>Hover a resource</b> (on the left, or any chip on a node) to light up who makes it <span class="ok">(green)</span> and who uses it <span class="bad">(red)</span>. <b>Click</b> it to see the full list, and start or stop those nodes from there.</li>
         <li><b>Drag</b> the background to move around, <b>scroll</b> or pinch to zoom.</li>
@@ -182,9 +182,8 @@
     width: 9px;
     height: 9px;
     border-radius: 50%;
+    background: var(--state);
   }
-  .sw.warn { background: var(--warn); }
-  .sw.full { background: var(--full); }
   .ok { color: var(--ok); }
   .bad { color: var(--bad); }
   .muted { color: var(--muted); }

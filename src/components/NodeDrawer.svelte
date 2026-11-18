@@ -14,7 +14,9 @@
   const view = $derived.by(() => {
     ui.frame;
     const c = conv;
-    const blocking = c.state === 'noInput' ? c.blockingNeeds() : [];
+    // Inputs that keep the cycle from starting / going on, outputs that don't fit.
+    const blocking = c.state === 'noInput' ? c.blockingNeeds() : c.state === 'interrupted' ? c.interruptingNeeds() : [];
+    const blockedOut = c.state === 'full' ? c.blockedOutputs() : [];
     const res = (r: Recipe) => ({
       id: r.resource.id,
       icon: r.resource.def.icon,
@@ -29,11 +31,14 @@
       name: c.name,
       state: c.state,
       pace: c.pace,
-      activePace: c.activePace,
+      outPace: c.cycle?.outPace ?? c.pace,
       pending: c.pacePending,
       paceMax: game.paceMax(),
       cycleSeconds: c.cycleSeconds(),
       blocking: blocking.map((r) => r.resource.name),
+      blockedOut: blockedOut.map((r) => r.resource.name),
+      sleeping: c.sleeping,
+      progress: c.cycle ? Math.round(c.cycle.progress * 100) : 0,
       inputs: c.needs.filter((r) => r.kind === 'consume').map((r) => ({ ...res(r), amount: r.amount, atLeast: r.atLeast })),
       catalysts: c.needs.filter((r) => r.kind === 'catalyst').map((r) => ({ ...res(r), atLeast: r.atLeast })),
       conditions: c.needs.filter((r) => r.kind === 'condition').map(res),
@@ -43,7 +48,7 @@
         base: r.amount,
         grows: !!c.growth && !r.byproduct,
         paced: c.pace !== 1 && !r.byproduct,
-        ok: r.resource.amount < r.resource.max,
+        ok: !blockedOut.includes(r),
       })),
       growth: c.growth
         ? {
@@ -75,16 +80,22 @@
     return `Uses ${pct(p)} of the inputs per second, makes ${pct(paceOutput(p))} of the outputs: ${extra > 0 ? '+' : '−'}${Math.abs(extra)}% from each input.`;
   });
 
+  // What the node is doing in its cycle: start (take inputs) → run → end (put out outputs).
   const status = $derived.by(() => {
+    const list = (names: string[]) => names.join(', ');
     switch (view.state) {
-      case 'ok':
-        return 'Running.';
-      case 'stopped':
-        return 'Stopped. Start it with the button, or right-click the node.';
-      case 'full':
-        return 'Paused: all outputs are full.';
       case 'noInput':
-        return view.blocking.length ? `Waiting for: ${view.blocking.join(', ')}.` : 'Waiting for input.';
+        if (view.sleeping) return "Can't start a cycle while you sleep: it uses Stamina, which only works while you're awake.";
+        return view.blocking.length ? `Can't start the next cycle, waiting for: ${list(view.blocking)}.` : 'Waiting for input.';
+      case 'ok':
+        return `Cycle running (${view.progress}%): the inputs are in, the outputs come out when it ends.`;
+      case 'interrupted':
+        if (view.sleeping) return `Interrupted at ${view.progress}%: you fell asleep. The cycle goes on when you wake up.`;
+        return `Interrupted at ${view.progress}%: needs ${list(view.blocking)} to go on. The cycle continues when it's back.`;
+      case 'full':
+        return `Cycle done, but there's no room for: ${list(view.blockedOut)}. It puts the output out as soon as it fits.`;
+      case 'stopped':
+        return 'Stopped. Start it with the button, or right-click the node. A cycle in progress is kept.';
     }
   });
 </script>
@@ -135,7 +146,10 @@
       </div>
       <p class="pace-text">{paceText}</p>
       {#if view.pending}
-        <p class="pace-pending">⏳ Applies when the next cycle starts (now {pct(view.activePace)}).</p>
+        <p class="pace-pending">
+          ⏳ The new speed applies now. This cycle still gives the output of {pct(view.outPace)} (the faster pace, so slowing
+          down mid-cycle isn't a trick); from the next cycle it's {pct(view.pace)}.
+        </p>
       {/if}
     </section>
   {/if}
@@ -298,10 +312,6 @@
   .dot {
     display: none;
   }
-  .state-ok { --state: var(--ok); }
-  .state-stopped { --state: var(--stopped); }
-  .state-noInput { --state: var(--warn); }
-  .state-full { --state: var(--full); }
   .toggle {
     flex: none;
     padding: 6px 12px;
@@ -391,7 +401,7 @@
     background: color-mix(in srgb, var(--bad) 14%, transparent);
   }
   tr.full td {
-    background: color-mix(in srgb, var(--full) 12%, transparent);
+    background: color-mix(in srgb, var(--st-full) 16%, transparent);
   }
   .pace-row {
     display: flex;

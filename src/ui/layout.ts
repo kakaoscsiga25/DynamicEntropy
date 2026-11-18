@@ -3,7 +3,10 @@
 import type { Converter, Game, Resource } from '../game/engine';
 
 export const NODE_W = 230;
-export const NODE_H = 74;
+/** Card height with up to two input / output rows (most nodes); lines attach relative to it. */
+export const NODE_H = 86;
+/** Tallest card (four input rows plus the pace slider): islands make room for it. */
+const NODE_MAX_H = 132;
 const REGION_PAD = 26;
 const REGION_LABEL = 26;
 
@@ -138,7 +141,7 @@ function bounds(nodes: Converter[]): Box {
   const ys = nodes.map((n) => n.def.y);
   const x = Math.min(...xs);
   const y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) + NODE_W - x, h: Math.max(...ys) + NODE_H - y };
+  return { x, y, w: Math.max(...xs) + NODE_W - x, h: Math.max(...ys) + NODE_MAX_H - y };
 }
 
 /** Islands grow as their nodes are discovered; empty ones are not shown. */

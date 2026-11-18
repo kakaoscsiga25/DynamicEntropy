@@ -41,12 +41,13 @@ function report(r: SimResult) {
   for (const e of r.events) out.push(`  ${time(e.tick).padStart(8)}  ${e.text}`);
 
   if (full) {
-    out.push('', 'Nodes (share of time since discovered):   run  wait  full   off   mostly waiting for');
+    out.push('', 'Nodes (share of time since discovered):   run  wait  full   off   int   mostly waiting for');
     for (const n of r.nodes.values()) {
-      const total = n.states.ok + n.states.stopped + n.states.noInput + n.states.full;
+      const s = n.states;
+      const total = s.ok + s.stopped + s.noInput + s.full + s.interrupted;
       const top = [...n.blockedBy.entries()].sort((a, b) => b[1] - a[1])[0];
       out.push(
-        `  ${n.name.padEnd(38)} ${pct(n.states.ok, total)}  ${pct(n.states.noInput, total)}  ${pct(n.states.full, total)}  ${pct(n.states.stopped, total)}   ${top ? `${top[0]} (${pct(top[1], total).trim()})` : ''}`,
+        `  ${n.name.padEnd(38)} ${pct(s.ok, total)}  ${pct(s.noInput, total)}  ${pct(s.full, total)}  ${pct(s.stopped, total)}  ${pct(s.interrupted, total)}   ${top ? `${top[0]} (${pct(top[1], total).trim()})` : ''}`,
       );
     }
     out.push('', 'Resources:                 avg   full  empty');

@@ -25,6 +25,13 @@ export interface ResourceDef {
   group: string;
   /** Visual only: used by many nodes, so it's shown as chips instead of connection lines. */
   hub?: boolean;
+  /** Only usable while awake: nodes that use it up pause while you're asleep (Stamina). */
+  awake?: boolean;
+  /**
+   * The dream resource: you're asleep while you have any of it, and while a node
+   * that makes or uses it is working (Sleep, Wake up).
+   */
+  dream?: boolean;
 }
 
 export interface RegionDef {
@@ -43,7 +50,7 @@ export interface ConverterDef {
   /** Can't be stopped, starts running on its own. Its pace can't be changed either. */
   unstoppable?: boolean;
   /**
-   * How long one cycle takes at 100% pace, in seconds (default: one tick, 0.5 s).
+   * How long one cycle takes at 100% pace, in seconds (default 1 s = 10 ticks).
    * Inputs are taken when a cycle starts, outputs are given when it ends.
    */
   cycle?: number;

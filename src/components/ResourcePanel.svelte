@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { game, ui, resourceTrend, selectResource, type Trend } from '../ui/session.svelte';
+  import { game, ui, selectResource } from '../ui/session.svelte';
   import { whole } from '../ui/format';
 
   // Stock and bars follow every tick.
@@ -15,14 +15,6 @@
     return out;
   });
 
-  // Rates change only once per second, so they are readable.
-  const trends = $derived.by(() => {
-    ui.second;
-    const map = new Map<string, Trend>();
-    game.resources.forEach((r, i) => map.set(r.id, resourceTrend(i)));
-    return map;
-  });
-
   function row(i: number) {
     const r = game.resources[i];
     return {
@@ -31,7 +23,6 @@
       icon: r.def.icon,
       color: r.def.color,
       amount: whole(r.amount),
-      exact: r.amount.toFixed(2),
       max: r.max,
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
     };
@@ -44,12 +35,10 @@
     <section>
       <h3>{g.name}</h3>
       {#each g.rows as r (r.id)}
-        {@const t = trends.get(r.id)}
         <button
           class="row"
           class:focused={ui.hoverResource === r.id}
           class:selected={ui.selectedResource === r.id}
-          title="{r.name}: {r.exact} / {r.max}. Click to see who makes and uses it."
           onclick={() => selectResource(r.id)}
           onpointerenter={() => (ui.hoverResource = r.id)}
           onpointerleave={() => ui.hoverResource === r.id && (ui.hoverResource = null)}
@@ -58,7 +47,6 @@
           <span class="name">{r.name}</span>
           <span class="amount"><b>{r.amount}</b><span class="max">/{r.max}</span></span>
           <span class="bar"><span style="width: {r.ratio * 100}%; background: {r.color}"></span></span>
-          <span class="rate {t?.direction ?? ''}">{t?.text ?? ''}</span>
         </button>
       {/each}
     </section>
@@ -82,7 +70,7 @@
     color: var(--muted);
   }
   h3 {
-    margin: 14px 4px 4px;
+    margin: 10px 4px 2px;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -91,27 +79,27 @@
     opacity: 0.8;
   }
   /*
-   * Fixed layout: numbers sit in right-aligned columns with equal-width digits
-   * and a fixed number of decimals, so nothing shifts while values change.
+   * One compact line per resource. Numbers sit in right-aligned columns with
+   * equal-width digits and a fixed number of decimals, so nothing shifts while
+   * values change. The fill bar is a thin line along the bottom of the row.
    */
   .row {
+    position: relative;
     display: grid;
-    grid-template-columns: 22px 1fr auto;
-    grid-template-areas:
-      'icon name amount'
-      'icon bar rate';
-    column-gap: 8px;
-    row-gap: 3px;
+    grid-template-columns: 18px 1fr auto;
+    column-gap: 6px;
     align-items: center;
     width: 100%;
-    padding: 6px 8px;
+    height: 25px;
+    padding: 0 6px 2px;
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: 6px;
     background: none;
     color: inherit;
     text-align: left;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
+    overflow: hidden;
   }
   .row:hover,
   .row.focused {
@@ -122,21 +110,17 @@
     border-color: var(--border);
   }
   .icon {
-    grid-area: icon;
-    font-size: 17px;
-    align-self: start;
-    margin-top: 1px;
+    font-size: 14px;
+    line-height: 1;
   }
   .name {
-    grid-area: name;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .amount {
-    grid-area: amount;
     display: flex;
     font-size: 12px;
     white-space: nowrap;
@@ -151,10 +135,12 @@
     color: var(--muted);
   }
   .bar {
-    display: block;
-    grid-area: bar;
-    height: 5px;
-    border-radius: 3px;
+    position: absolute;
+    left: 30px;
+    right: 6px;
+    bottom: 2px;
+    height: 2px;
+    border-radius: 1px;
     background: var(--panel-2);
     overflow: hidden;
   }
@@ -165,24 +151,6 @@
   .bar span {
     display: block;
     height: 100%;
-    border-radius: 3px;
-    transition: width 0.45s linear;
-  }
-  .rate {
-    grid-area: rate;
-    min-width: 7ch;
-    font-size: 11px;
-    text-align: right;
-    white-space: nowrap;
-    color: var(--muted);
-    opacity: 0.6;
-  }
-  .rate.up {
-    color: var(--ok);
-    opacity: 1;
-  }
-  .rate.down {
-    color: var(--bad);
-    opacity: 1;
+    transition: width 0.2s linear;
   }
 </style>

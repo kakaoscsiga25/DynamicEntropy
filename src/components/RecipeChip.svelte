@@ -63,29 +63,35 @@
     onpointerleave={() => ui.hoverResource === id && (ui.hoverResource = null)}
   >
     <span class="icon">{recipe.resource.def.icon}</span>
-    {#if kind === 'catalyst'}
-      <span class="op">≥</span>{num(recipe.atLeast)}
-    {:else if kind === 'condition'}
-      <span class="op">{recipe.atMost === 0 ? '=' : '≤'}</span>{num(recipe.atMost)}
-    {:else if value !== undefined}
-      <span class="grown">{value.toFixed(value < 1 ? 2 : 1)}</span>
-    {:else}
-      {num(recipe.amount)}
-      {#if side === 'in' && recipe.atLeast > recipe.amount}
-        <span class="min">≥{num(recipe.atLeast)}</span>
+    <span class="val">
+      {#if kind === 'catalyst'}
+        <span class="op">≥</span>{num(recipe.atLeast)}
+      {:else if kind === 'condition'}
+        <span class="op">{recipe.atMost === 0 ? '=' : '≤'}</span>{num(recipe.atMost)}
+      {:else if value !== undefined}
+        <span class="grown">{value.toFixed(value < 1 ? 2 : 1)}</span>
+      {:else}
+        {#if side === 'in' && recipe.atLeast > recipe.amount}
+          <span class="min">≥{num(recipe.atLeast)}</span>
+        {/if}
+        {num(recipe.amount)}
       {/if}
-    {/if}
+    </span>
   </span>
 {/if}
 
 <style>
+  /* One row of a node's input or output table: icon left, number right. */
   .chip {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 2px;
-    height: 22px;
+    justify-content: space-between;
+    gap: 4px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 19px;
     padding: 0 6px 0 4px;
-    border-radius: 11px;
+    border-radius: 6px;
     font-size: 12px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -111,9 +117,12 @@
     color: var(--muted);
     font-weight: 500;
   }
+  .val {
+    white-space: nowrap;
+  }
   .min {
     font-size: 10px;
-    margin-left: 2px;
+    margin-right: 3px;
   }
   .catalyst {
     background: transparent;
@@ -130,7 +139,8 @@
     box-shadow: 0 0 0 1px var(--bad);
   }
   .full {
-    border-color: var(--full);
-    box-shadow: 0 0 0 1px var(--full);
+    border-color: var(--st-full);
+    background: color-mix(in srgb, var(--st-full) 22%, transparent);
+    box-shadow: 0 0 0 1px var(--st-full);
   }
 </style>

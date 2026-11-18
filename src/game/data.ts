@@ -6,12 +6,14 @@ import type { GameData } from './defs.ts';
 // more the bigger the stock above their minimum, up to their size. Skills:
 // Steady pace (pace slider) and Overtime (pace above 100%).
 // Visual-only fields: icon, color, group, hub, byproduct, region, x, y.
+// Every cycle lasts 1 s at 100% pace unless a node sets `cycle`. Nodes that use
+// Stamina (awake: true) pause while you're asleep (Dreaming, dream: true).
 // Balance check: `npm run sim` plays the game with bots and reports timings.
 
 export const DATA: GameData = {
   resources: [
-    { id: 'stamina', name: 'Stamina', start: 100, max: 100, icon: '⚡', color: '#f5c542', group: 'Body', hub: true },
-    { id: 'dreaming', name: 'Dreaming', max: 100, icon: '💤', color: '#b48cff', group: 'Body' },
+    { id: 'stamina', name: 'Stamina', start: 100, max: 100, icon: '⚡', color: '#f5c542', group: 'Body', hub: true, awake: true },
+    { id: 'dreaming', name: 'Dreaming', max: 100, icon: '💤', color: '#b48cff', group: 'Body', dream: true },
     { id: 'seed', name: 'Seed', max: 100, icon: '🌰', color: '#d2a66a', group: 'Wilds' },
     { id: 'fruit', name: 'Fruit', max: 100, icon: '🍎', color: '#ff6b81', group: 'Wilds' },
     { id: 'plant', name: 'Plant', max: 100, icon: '🌿', color: '#4cd06d', group: 'Wilds' },
@@ -40,7 +42,7 @@ export const DATA: GameData = {
 
   converters: [
     {
-      id: 'wake_up', name: 'Wake up', region: 'home', x: -40, y: 110, unstoppable: true,
+      id: 'wake_up', name: 'Wake up', region: 'home', x: -40, y: 140, unstoppable: true,
       needs: [{ res: 'dreaming', amount: 100, atLeast: 100 }],
       makes: [{ res: 'stamina', amount: 100 }],
     },
@@ -53,17 +55,17 @@ export const DATA: GameData = {
       makes: [{ res: 'dreaming', amount: 5 }],
     },
     {
-      id: 'twiddling_thumbs', name: 'Twiddling thumbs', region: 'home', x: -40, y: 220,
+      id: 'twiddling_thumbs', name: 'Twiddling thumbs', region: 'home', x: -40, y: 280,
       needs: [{ res: 'stamina', amount: 1 }],
       makes: [],
     },
     {
-      id: 'water_source', name: 'Water source', region: 'wilds', x: 270, y: 110,
+      id: 'water_source', name: 'Water source', region: 'wilds', x: 270, y: 140,
       needs: [{ res: 'stamina', amount: 5 }],
       makes: [{ res: 'water', amount: 1, atLeast: 0 }],
     },
     {
-      id: 'forest', name: 'Forest', region: 'wilds', x: 810, y: 110,
+      id: 'forest', name: 'Forest', region: 'wilds', x: 810, y: 140,
       // 50 Plant: ×1, 75 Plant: ×2 (cap). "Plant more trees" → ×3 at 100.
       growth: { res: 'plant', perUnit: 0.04, maxFactor: 2 },
       needs: [
@@ -73,7 +75,7 @@ export const DATA: GameData = {
       makes: [{ res: 'plant', amount: 2, atLeast: 0 }],
     },
     {
-      id: 'wood_cutting', name: 'Wood cutting', region: 'wilds', x: 1080, y: 55,
+      id: 'wood_cutting', name: 'Wood cutting', region: 'wilds', x: 1080, y: 70,
       needs: [
         { res: 'plant', amount: 5, atLeast: 0 },
         { res: 'stamina', amount: 10, atLeast: 0 },
@@ -110,7 +112,7 @@ export const DATA: GameData = {
       makes: [{ res: 'fire', amount: 1, atLeast: 0 }],
     },
     {
-      id: 'fireplace', name: 'Fireplace', region: 'fire_clay', x: 1380, y: 110,
+      id: 'fireplace', name: 'Fireplace', region: 'fire_clay', x: 1380, y: 140,
       needs: [
         { res: 'wood', amount: 1, atLeast: 10 },
         { res: 'fire', amount: 1, atLeast: 25 },
@@ -126,7 +128,7 @@ export const DATA: GameData = {
       makes: [{ res: 'clay', amount: 1, atLeast: 0 }],
     },
     {
-      id: 'clay_furnace', name: 'Clay furnace', region: 'fire_clay', x: 1650, y: 110,
+      id: 'clay_furnace', name: 'Clay furnace', region: 'fire_clay', x: 1650, y: 140,
       needs: [
         { res: 'clay', amount: 2, atLeast: 0 },
         { res: 'fire', amount: 1, atLeast: 50 },
@@ -134,7 +136,7 @@ export const DATA: GameData = {
       makes: [{ res: 'brick', amount: 1, atLeast: 0 }],
     },
     {
-      id: 'cotton_field', name: 'Cotton field', region: 'fields', x: 540, y: 330,
+      id: 'cotton_field', name: 'Cotton field', region: 'fields', x: 540, y: 420,
       // 10 Seed: ×1, 20: ×2, 30: ×3 (cap). "Bigger cotton field" → ×5 at 50.
       growth: { res: 'seed', perUnit: 0.1, maxFactor: 3 },
       needs: [
@@ -147,7 +149,7 @@ export const DATA: GameData = {
       ],
     },
     {
-      id: 'loom', name: 'Loom', region: 'fields', x: 810, y: 330,
+      id: 'loom', name: 'Loom', region: 'fields', x: 810, y: 420,
       needs: [
         { res: 'cotton', amount: 5, atLeast: 0 },
         { res: 'stamina', amount: 3, atLeast: 0 },
@@ -155,7 +157,7 @@ export const DATA: GameData = {
       makes: [{ res: 'fabric', amount: 1 }],
     },
     {
-      id: 'wheat_field', name: 'Wheat field', region: 'fields', x: 270, y: 440,
+      id: 'wheat_field', name: 'Wheat field', region: 'fields', x: 270, y: 560,
       growth: { res: 'seed', perUnit: 0.1, maxFactor: 3 },
       needs: [
         { res: 'water', amount: 1, atLeast: 0 },
@@ -167,7 +169,7 @@ export const DATA: GameData = {
       ],
     },
     {
-      id: 'mill', name: 'Mill', region: 'fields', x: 540, y: 440,
+      id: 'mill', name: 'Mill', region: 'fields', x: 540, y: 560,
       needs: [
         { res: 'wheat', amount: 1, atLeast: 0 },
         { res: 'stamina', amount: 1 },
@@ -175,7 +177,7 @@ export const DATA: GameData = {
       makes: [{ res: 'flour', amount: 0.1 }],
     },
     {
-      id: 'baking', name: 'Baking', region: 'fields', x: 810, y: 440,
+      id: 'baking', name: 'Baking', region: 'fields', x: 810, y: 560,
       needs: [
         { res: 'flour', amount: 1 },
         { res: 'water', amount: 0.3 },
@@ -185,12 +187,12 @@ export const DATA: GameData = {
       makes: [{ res: 'bread', amount: 1 }],
     },
     {
-      id: 'iron_mine', name: 'Iron mine', region: 'forge', x: 1650, y: 330,
+      id: 'iron_mine', name: 'Iron mine', region: 'forge', x: 1650, y: 420,
       needs: [{ res: 'stamina', amount: 5 }],
       makes: [{ res: 'iron_ore', amount: 0.1 }],
     },
     {
-      id: 'iron_smelter', name: 'Iron smelter', region: 'forge', x: 1380, y: 330,
+      id: 'iron_smelter', name: 'Iron smelter', region: 'forge', x: 1380, y: 420,
       needs: [
         { res: 'iron_ore', amount: 1 },
         { res: 'fire', amount: 5, atLeast: 30 },
@@ -198,7 +200,7 @@ export const DATA: GameData = {
       makes: [{ res: 'iron', amount: 0.1 }],
     },
     {
-      id: 'tool_maker', name: 'Tool maker', region: 'forge', x: 1110, y: 330,
+      id: 'tool_maker', name: 'Tool maker', region: 'forge', x: 1110, y: 420,
       needs: [
         { res: 'iron', amount: 5 },
         { res: 'wood', amount: 15 },
@@ -208,7 +210,7 @@ export const DATA: GameData = {
     },
     {
       // Only while awake, and only when it won't be wasted (Stamina ≤ 80).
-      id: 'eat_bread', name: 'Eat bread', region: 'home', x: -40, y: 330,
+      id: 'eat_bread', name: 'Eat bread', region: 'home', x: -40, y: 420,
       needs: [
         { res: 'bread', amount: 1 },
         { res: 'dreaming', amount: 0, atMost: 0 },

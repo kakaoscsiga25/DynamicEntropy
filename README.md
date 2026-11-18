@@ -49,12 +49,19 @@ Everything lives in `src/game/data.ts`. Converters run in the order they are
 listed (earlier ones get shared inputs first). `x`/`y` place the node on the map,
 `region` puts it on an island.
 
-Each node works in its own loop: a cycle takes the inputs when it starts and
-gives the outputs when it ends. `cycle` sets its length in seconds (default
-0.5 s, one tick). The player's **pace** slider (unlocked by the Steady pace
+Each node works in its own loop, a **cycle**: it takes the inputs when it starts
+(or waits for them), runs (and may be interrupted, e.g. by falling asleep), and
+at the end puts the outputs into storage once they fit (byproducts and Sleep /
+Wake up fill up to the limit instead of waiting). `cycle` sets its length in seconds (default
+1 s; the game clock ticks every 0.1 s). Nodes that use a resource marked
+`awake` (Stamina) pause while you're asleep (you have `dream` resource, Dreaming,
+or Sleep / Wake up is working). The player's **pace** slider (unlocked by the Steady pace
 skill, up to 200% with Overtime) changes how fast the cycles run: inputs per
 second follow the pace, outputs per second follow 1.3·p − 0.3·p², so slower is
-more efficient and faster is wasteful. A new pace applies from the next cycle.
+more efficient and faster is wasteful. The slider moves in 1% steps (minimum
+10%) and its speed applies at once; a cycle that was running when it changed
+gives the output of the faster of the two paces (so slowing down mid-cycle isn't
+a trick), and the new pace's efficiency applies from the next cycle.
 
 Upgrades marked `building: true` appear in the **Build** panel instead of on a
 node; `capacity` raises storage limits, `unlocks` makes it a skill.

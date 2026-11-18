@@ -1,6 +1,7 @@
-# Checks every push / PR. Pushing a version tag (e.g. v2.0.0) also:
-#   - publishes the game to GitHub Pages
-#   - creates a GitHub Release with a downloadable zip (open index.html, no server needed)
+# Checks every push / PR. Every push to main (and a manual "Run workflow")
+# publishes the game to GitHub Pages. Pushing a version tag (e.g. v2.1) also
+# creates a GitHub Release with a downloadable zip (open index.html, no server needed).
+# Repo setting needed: Settings -> Pages -> Source: "GitHub Actions".
 name: Build
 
 on:
@@ -43,7 +44,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "dynamic-entropy-${GITHUB_REF_NAME}.zip" --generate-notes
 
   deploy:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:

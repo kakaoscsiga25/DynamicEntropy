@@ -87,15 +87,17 @@ test; it was retired when the rules started to change. See git history.)
 
 ## Releasing
 
+Every push to `main` is tested, built and published to GitHub Pages by the
+GitHub Action (`.github/workflows/build.yml`); "Run workflow" on the Actions page
+does the same. A version tag also creates a GitHub Release with a zip:
+
 ```bash
-git tag v2.0.0
-git push origin v2.0.0
+git tag -a v2.1 -m "Dynamic Entropy v2.1"
+git push origin main v2.1
 ```
 
-The GitHub Action (`.github/workflows/build.yml`) then tests and builds the game,
-publishes it to GitHub Pages, and creates a GitHub Release with a zip.
-
-One-time setup: in the repository settings, **Pages → Source → GitHub Actions**.
+One-time setup: in the repository settings, **Pages → Source → GitHub Actions**
+(otherwise GitHub keeps publishing the raw repository, which shows a blank page).
 
 ## Legacy version
 

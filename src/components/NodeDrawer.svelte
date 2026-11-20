@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { game, ui, select, selectResource, toggleConverter, setPace } from '../ui/session.svelte';
+  import { game, ui, select, selectResource, toggleConverter, setPace, setThrottle, setTarget, setShares, setGuard, sharpen } from '../ui/session.svelte';
   import { num, stock } from '../ui/format';
-  import { PACE_MIN, PACE_STEP, paceEfficiency, paceOutput, type Recipe } from '../game/engine';
+  import { PACE_MIN, PACE_STEP, paceEfficiency, paceOutput, wearFactor, AUTO_SHARPEN_AT } from '../game/engine';
+  import { displayLines, type DisplayLine } from '../ui/layout';
   import { recipeText } from './RecipeChip.svelte';
   import UpgradeCard from './UpgradeCard.svelte';
+  import PartsBar from './PartsBar.svelte';
   import { STATE_LABEL } from './states';
+  import { settleTemp } from './fire';
 
   let { id }: { id: string } = $props();
 
@@ -17,16 +20,28 @@
     // Inputs that keep the cycle from starting / going on, outputs that don't fit.
     const blocking = c.state === 'noInput' ? c.blockingNeeds() : c.state === 'interrupted' ? c.interruptingNeeds() : [];
     const blockedOut = c.state === 'full' ? c.blockedOutputs() : [];
-    const res = (r: Recipe) => ({
-      id: r.resource.id,
-      icon: r.resource.def.icon,
-      name: r.resource.name,
-      color: r.resource.def.color,
-      stock: stock(r.resource.amount),
-      max: r.resource.max,
-      ok: !blocking.includes(r),
-      text: recipeText(r, 'in'),
-    });
+    const hit = (list: typeof blocking, d: DisplayLine) => list.some((r) => r === d.recipe || (r.resource === d.recipe.resource && r.kind === d.recipe.kind));
+    const row = (d: DisplayLine) => {
+      const r = d.recipe;
+      const res = d.kind === 'heat' ? (r.heat!.find((x) => r.heatOk() && x.amount >= r.atLeast && x.amount <= r.atMost) ?? r.resource) : r.resource;
+      return {
+        id: res.id,
+        icon: res.def.icon,
+        name: d.kind === 'heat' ? 'Fire' : res.name,
+        unit: res.def.unit ?? '',
+        stock: stock(res.amount),
+        max: res.max,
+        amount: d.amount,
+        base: d.base,
+        kind: d.kind,
+        recipe: r,
+        text: recipeText(r, d.kind === 'out' ? 'out' : 'in', d.amount),
+        bad: hit(blocking, d),
+        full: hit(blockedOut, d),
+      };
+    };
+    const ins = displayLines(c, 'in').map(row);
+    const fire = game.fireOf(c);
     return {
       name: c.name,
       state: c.state,
@@ -35,25 +50,29 @@
       pending: c.pacePending,
       paceMax: game.paceMax(),
       cycleSeconds: c.cycleSeconds(),
-      blocking: blocking.map((r) => r.resource.name),
+      blocking: blocking.map((r) => (r.heat ? `a fire at ${num(r.atLeast)}–${num(r.atMost)}°` : r.guard ? `the rule "${r.guard.label}"` : r.resource.name)),
       blockedOut: blockedOut.map((r) => r.resource.name),
       sleeping: c.sleeping,
       progress: c.cycle ? Math.round(c.cycle.progress * 100) : 0,
-      inputs: c.needs.filter((r) => r.kind === 'consume').map((r) => ({ ...res(r), amount: r.amount, atLeast: r.atLeast })),
-      catalysts: c.needs.filter((r) => r.kind === 'catalyst').map((r) => ({ ...res(r), atLeast: r.atLeast })),
-      conditions: c.needs.filter((r) => r.kind === 'condition').map(res),
-      outputs: c.makes.map((r) => ({
-        ...res(r),
-        amount: c.output(r),
-        base: r.amount,
-        grows: !!c.growth && !r.byproduct,
-        paced: c.pace !== 1 && !r.byproduct,
-        ok: !blockedOut.includes(r),
-      })),
+      inputs: ins.filter((r) => r.kind === 'consume'),
+      optional: ins.filter((r) => r.kind === 'optional'),
+      catalysts: ins.filter((r) => r.kind === 'catalyst'),
+      heat: ins.filter((r) => r.kind === 'heat'),
+      conditions: ins.filter((r) => r.kind === 'condition'),
+      outputs: displayLines(c, 'out').map(row),
+      // What multiplies the outputs now.
+      factors: [
+        ...(c.growth ? [{ name: `${c.growth.shape === 'logistic' ? 'Breeding' : 'Growth'} (${c.growth.resource.name})`, value: c.growthFactor() }] : []),
+        ...(c.needsAwake && game.healthDef ? [{ name: `Health ${Math.round(game.health())}%`, value: game.workFactor() }] : []),
+        ...(c.wears ? [{ name: `Tool ${Math.ceil(c.condition)}%`, value: wearFactor(c.condition) }] : []),
+        ...(c.pace !== 1 ? [{ name: `Pace ${Math.round(c.pace * 100)}%`, value: paceEfficiency(c.pace) }] : []),
+      ],
       growth: c.growth
         ? {
             factor: c.growthFactor(),
+            shape: c.growth.shape,
             max: c.growth.maxFactor,
+            base: c.growth.base,
             resource: c.growth.resource,
             threshold: c.growthThreshold(),
             perUnit: c.growth.perUnit,
@@ -61,6 +80,24 @@
             stock: c.growth.resource.amount,
           }
         : null,
+      fire: fire
+        ? {
+            res: fire.resource,
+            now: fire.resource.amount,
+            settle: settleTemp(game, c),
+            fade: fire.resource.fadeRate,
+            thermostat: game.has('thermostat'),
+            target: c.target,
+          }
+        : null,
+      throttle: c.throttle,
+      shares: [...c.shares],
+      wears: c.wears,
+      willWear: !!c.def.wear && !c.wears,
+      condition: c.condition,
+      sharpenCost: game.sharpenCost(c),
+      maintenance: game.has('maintenance'),
+      guards: c.guards.map((g) => ({ label: g.guard!.label, enabled: g.guard!.enabled })),
       available: c.upgrades.filter((u) => !u.bought && u.requirementsMet()),
       locked: c.upgrades.filter((u) => !u.bought && !u.requirementsMet()),
       owned: c.upgrades.filter((u) => u.bought),
@@ -91,6 +128,7 @@
         return `Cycle running (${view.progress}%): the inputs are in, the outputs come out when it ends.`;
       case 'interrupted':
         if (view.sleeping) return `Interrupted at ${view.progress}%: you fell asleep. The cycle goes on when you wake up.`;
+        if (!view.blocking.length) return `Done at ${view.progress}%: its Stamina waits until you wake up.`;
         return `Interrupted at ${view.progress}%: needs ${list(view.blocking)} to go on. The cycle continues when it's back.`;
       case 'full':
         return `Cycle done, but there's no room for: ${list(view.blockedOut)}. It puts the output out as soon as it fits.`;
@@ -98,6 +136,22 @@
         return 'Stopped. Start it with the button, or right-click the node. A cycle in progress is kept.';
     }
   });
+
+  /** Moves one crop's share by a step; the others give or take the difference evenly. */
+  function nudge(i: number, delta: number) {
+    const s = [...view.shares];
+    const next = Math.min(1, Math.max(0, Math.round((s[i] + delta) * 20) / 20));
+    const change = next - s[i];
+    if (Math.abs(change) < 1e-9) return;
+    const others = s.map((_, j) => j).filter((j) => j !== i && (change > 0 ? s[j] > 0 : true));
+    s[i] = next;
+    let left = change;
+    for (const j of others) {
+      const give = change > 0 ? Math.min(s[j], left / others.length + 1e-9) : left / others.length;
+      s[j] -= give;
+    }
+    setShares(conv.id, s.map((x) => Math.max(0, x)));
+  }
 </script>
 
 <aside class="drawer" aria-label="{view.name} details" style="--accent: {region.color}">
@@ -116,7 +170,7 @@
       <p>{status}</p>
     </div>
     {#if conv.unstoppable}
-      <span class="always" title="This node can't be stopped">Always on</span>
+      <span class="always" title="This node can't be stopped">{conv.nature ? '🌿 Nature' : 'Always on'}</span>
     {:else}
       <button class="toggle" onclick={() => toggleConverter(conv.id)}>
         {view.state === 'stopped' ? '▶ Start' : '❚❚ Stop'}
@@ -124,7 +178,88 @@
     {/if}
   </div>
 
-  {#if view.paceMax > 0 && !conv.unstoppable}
+  {#if view.fire}
+    {@const f = view.fire}
+    <section class="box">
+      <h3>Fire <small>{f.res.def.icon} {f.res.name} now {Math.round(f.now)}°</small></h3>
+      <div class="pace-row">
+        <span class="k">🪵</span>
+        <input
+          type="range"
+          min={conv.def.throttle!.min}
+          max={conv.def.throttle!.max}
+          step={conv.def.throttle!.step}
+          value={view.throttle}
+          aria-label="Wood per cycle"
+          oninput={(e) => setThrottle(conv.id, Number(e.currentTarget.value))}
+        />
+        <span class="pace-value">{(view.throttle ?? 0).toFixed(2)}</span>
+      </div>
+      <p class="pace-text">
+        Wood per cycle ({num(view.cycleSeconds)} s). The fire cools by {num(f.fade * 100)}% a second, so with this much wood it
+        settles at <b>{Math.round(f.settle)}°</b>. More wood, hotter fire; it takes a few minutes to get there.
+      </p>
+      {#if f.thermostat}
+        <div class="pace-row">
+          <label class="check"><input type="checkbox" checked={f.target !== null} onchange={(e) => setTarget(conv.id, e.currentTarget.checked ? Math.round(f.now) : null)} /> 🌡 Thermostat</label>
+          {#if f.target !== null}
+            <input type="range" min="5" max="100" step="1" value={f.target} aria-label="Temperature to keep" oninput={(e) => setTarget(conv.id, Number(e.currentTarget.value))} />
+            <span class="pace-value">{f.target}°</span>
+          {/if}
+        </div>
+        <p class="pace-text">{f.target !== null ? 'Adds the wood by itself to keep this temperature. Moving the wood slider turns it off.' : 'Turn it on to keep a temperature without setting the wood by hand.'}</p>
+      {/if}
+    </section>
+  {/if}
+
+  {#if conv.parts.length}
+    <section class="box">
+      <h3>Crops <small>drag the handles to split the field</small></h3>
+      <PartsBar {conv} big />
+      <ul class="crops">
+        {#each conv.parts as p, i (p.id)}
+          <li>
+            <span>{p.icon} {p.name}</span>
+            <button onclick={() => nudge(i, -0.05)} disabled={view.shares[i] <= 0} aria-label="Less {p.name}">−</button>
+            <b>{pct(view.shares[i])}</b>
+            <button onclick={() => nudge(i, 0.05)} disabled={view.shares[i] >= 1} aria-label="More {p.name}">+</button>
+          </li>
+        {/each}
+      </ul>
+      <p class="pace-text">Wheat and cotton use up the Soil, clover gives it back (and makes Hay). Ash, manure and compost feed the Soil too. A full crop doesn't stop the others: its surplus is lost.</p>
+    </section>
+  {/if}
+
+  {#if view.wears || view.willWear}
+    <section class="box">
+      <h3>Tool <small>{view.wears ? (view.condition <= 0 ? 'broken' : `${Math.ceil(view.condition)}%`) : 'none yet'}</small></h3>
+      {#if view.wears}
+        <div class="growth-bar tool" class:low={view.condition <= 30}><div style="width: {view.condition}%"></div></div>
+        <div class="tool-row">
+          <p class="pace-text">
+            Wears down with every cycle. Worn: makes {pct(wearFactor(Math.max(1, view.condition)))}; broken: 40%.
+            {view.maintenance ? `Maintenance sharpens it at ${AUTO_SHARPEN_AT}%.` : 'Sharpen it before it breaks, repairing costs a Tool.'}
+          </p>
+          <button class="toggle" disabled={view.condition >= 100 || !view.sharpenCost.every((k) => k.resource.canTake(k.amount))} onclick={() => sharpen(conv.id)}>
+            {view.condition <= 0 ? 'Repair' : 'Sharpen'}: {view.sharpenCost.map((k) => `${k.resource.def.icon} ${num(k.amount)}`).join(' ')}
+          </button>
+        </div>
+      {:else}
+        <p class="pace-text">A tool upgrade makes this node better, but the tool wears out and has to be sharpened.</p>
+      {/if}
+    </section>
+  {/if}
+
+  {#if view.guards.length}
+    <section class="box">
+      <h3>Rules <small>from the Mind</small></h3>
+      {#each view.guards as g, i}
+        <label class="check rule"><input type="checkbox" checked={g.enabled} onchange={(e) => setGuard(conv.id, i, e.currentTarget.checked)} /> 🤖 {g.label}</label>
+      {/each}
+    </section>
+  {/if}
+
+  {#if view.paceMax > 0 && conv.pacable}
     <section class="pace">
       <h3>Pace <small>how hard this node works</small></h3>
       <div class="pace-row">
@@ -163,34 +298,52 @@
       <tbody>
         {#each view.inputs as r}
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-          <tr class:bad={!r.ok} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
+          <tr class:bad={r.bad} title={r.text} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
-            <td>{r.name}{#if r.atLeast > r.amount}<span class="sub"> · min. stock {num(r.atLeast)}</span>{/if}</td>
+            <td>{r.name}{#if r.recipe.atLeast > r.recipe.amount}<span class="sub"> · min. stock {num(r.recipe.atLeast)}</span>{/if}</td>
             <td class="num neg">−{num(r.amount)}</td>
             <td class="num rate">{num(r.amount / view.cycleSeconds)}/s</td>
             <td class="num stock">{r.stock}</td>
           </tr>
         {/each}
+        {#each view.optional as r}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <tr title={r.text} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
+            <td class="icon">{r.icon}</td>
+            <td>{r.name}<span class="sub"> · if there's some{r.recipe.yields ? ` → ${r.recipe.yields.resource.name} ×${num(r.recipe.yields.amount)}` : ''}</span></td>
+            <td class="num neg">≤{num(r.amount)}</td>
+            <td></td>
+            <td class="num stock">{r.stock}</td>
+          </tr>
+        {/each}
         {#each view.catalysts as r}
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-          <tr class:bad={!r.ok} title={r.text} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
+          <tr class:bad={r.bad} title={r.text} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
-            <td>{r.name}<span class="sub"> · needs ≥{num(r.atLeast)}, not used</span></td>
+            <td>{r.name}<span class="sub"> · needs ≥{num(r.recipe.minStock)}, not used</span></td>
             <td class="num">0</td>
             <td></td>
             <td class="num stock">{r.stock}</td>
           </tr>
         {/each}
+        {#each view.heat as r}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <tr class:bad={r.bad} title={r.text} onclick={() => selectResource(r.id)}>
+            <td class="icon">{r.icon}</td>
+            <td>Fire<span class="sub"> · {num(r.recipe.atLeast)}–{num(r.recipe.atMost)}°, any fire</span></td>
+            <td class="num">0</td>
+            <td></td>
+            <td class="num stock">{r.recipe.heat!.map((x) => `${Math.round(x.amount)}°`).join(' / ')}</td>
+          </tr>
+        {/each}
         {#each view.outputs as r}
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-          <tr class="out" class:full={!r.ok} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
+          <tr class="out" class:full={r.full} title={r.text} onclick={() => selectResource(r.id)} onpointerenter={() => (ui.hoverResource = r.id)} onpointerleave={() => (ui.hoverResource = null)}>
             <td class="icon">{r.icon}</td>
-            <td>{r.name}</td>
-            <td class="num pos" title={r.grows || r.paced ? `base ${num(r.base)}${r.grows ? ' × growth' : ''}${r.paced ? ' × pace' : ''}` : ''}
-              >+{r.grows ? r.amount.toFixed(1) : num(r.amount)}</td
-            >
-            <td class="num rate">{r.grows ? (r.amount / view.cycleSeconds).toFixed(1) : num(r.amount / view.cycleSeconds)}/s</td>
-            <td class="num stock">{r.stock}/{r.max}</td>
+            <td>{r.name}{#if r.recipe.byproduct}<span class="sub"> · side product</span>{/if}</td>
+            <td class="num pos" title={Math.abs(r.amount - r.base) > 1e-9 ? `base ${num(r.base)}` : ''}>+{num(r.amount)}</td>
+            <td class="num rate">{num(r.amount / view.cycleSeconds)}/s</td>
+            <td class="num stock">{r.stock}/{num(r.max)}</td>
           </tr>
         {/each}
       </tbody>
@@ -198,24 +351,42 @@
     {#if view.conditions.length}
       <ul class="conditions">
         {#each view.conditions as r}
-          <li class:bad={!r.ok}>{r.icon} {r.text}</li>
+          <li class:bad={r.bad}>{r.icon} {r.text}</li>
         {/each}
       </ul>
+    {/if}
+    {#if view.factors.length}
+      <p class="factors">
+        Output
+        {#each view.factors as f, i}
+          <span class:down={f.value < 0.999} class:up={f.value > 1.001}>{i ? ' · ' : ' '}{f.name} ×{f.value.toFixed(2)}</span>
+        {/each}
+      </p>
     {/if}
     {#if view.growth}
       {@const g = view.growth}
       <div class="growth">
-        <div class="growth-head">
-          <b>Growth ×{g.factor.toFixed(1)}</b>
-          <span>max ×{g.max}</span>
-        </div>
-        <div class="growth-bar"><div style="width: {Math.min(100, ((g.factor - 1) / Math.max(1e-9, g.max - 1)) * 100)}%"></div></div>
-        <p>
-          Makes more the more {g.resource.def.icon} {g.resource.name} there is above {num(g.threshold)}:
-          +{Math.round(g.perUnit * 100)}% per unit, up to ×{g.max} at {num(g.fullAt)}{g.fullAt > g.resource.max
-            ? ` (more than you can store: ${g.resource.max})`
-            : ''}. Now {num(Math.floor(g.stock))}.
-        </p>
+        {#if g.shape === 'logistic'}
+          <div class="growth-head"><b>Breeding ×{g.factor.toFixed(2)}</b><span>best at {num(g.fullAt)}</span></div>
+          <div class="growth-bar"><div style="width: {g.factor * 100}%"></div></div>
+          <p>
+            Multiplies fastest when {g.resource.def.icon} {g.resource.name} is half full ({num(g.fullAt)} of {num(g.resource.max)}):
+            slow when there are only a few, and none when it's full. Now {num(Math.floor(g.stock))}.
+          </p>
+        {:else}
+          <div class="growth-head">
+            <b>Growth ×{g.factor.toFixed(2)}</b>
+            <span>max ×{num(g.max)}</span>
+          </div>
+          <div class="growth-bar"><div style="width: {Math.min(100, ((g.factor - Math.min(g.base, 1)) / Math.max(1e-9, g.max - Math.min(g.base, 1))) * 100)}%"></div></div>
+          <p>
+            Makes more the more {g.resource.def.icon} {g.resource.name} there is{g.threshold > 0 ? ` above ${num(g.threshold)}` : ''}:
+            ×{num(g.base)}{g.threshold > 0 ? ` at ${num(g.threshold)}` : ' at 0'}, +{num(g.perUnit * 100)}% per unit, up to ×{num(g.max)} at {num(g.fullAt)}{g.fullAt >
+            g.resource.max
+              ? ` (more than you can store: ${num(g.resource.max)})`
+              : ''}. Now {num(Math.floor(g.stock))}.
+          </p>
+        {/if}
       </div>
     {/if}
     {#if view.inputs.length === 0 && view.catalysts.length === 0 && view.outputs.length === 0}
@@ -501,6 +672,89 @@
   .cards {
     display: grid;
     gap: 8px;
+  }
+  .box {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--panel-2);
+  }
+  .box h3 {
+    margin-bottom: 6px;
+  }
+  .k {
+    font-size: 15px;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .check.rule {
+    white-space: normal;
+    margin-top: 4px;
+  }
+  .crops {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0;
+    display: grid;
+    gap: 4px;
+    font-size: 13px;
+  }
+  .crops li {
+    display: grid;
+    grid-template-columns: 1fr 24px 5ch 24px;
+    align-items: center;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .crops b {
+    text-align: right;
+  }
+  .crops button {
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .crops button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .tool-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .tool-row p {
+    flex: 1;
+  }
+  .toggle:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .growth-bar.tool div {
+    background: var(--ok);
+  }
+  .growth-bar.tool.low div {
+    background: var(--warn);
+  }
+  .factors {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .factors .down {
+    color: #ffb3ba;
+  }
+  .factors .up {
+    color: #a8f0bc;
   }
   .owned {
     list-style: none;

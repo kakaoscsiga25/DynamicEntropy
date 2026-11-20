@@ -24,32 +24,38 @@
     let hiddenUsers = 0;
 
     for (const c of game.converters) {
+      if (c.locked) continue;
       const make = c.makes.find((m) => m.resource === r && m.amount > 0);
-      const need = c.needs.find((n) => n.resource === r && n.kind !== 'none');
+      const fertilizer = c.needs.find((n) => n.yields?.resource === r);
+      const need = c.needs.find((n) => (n.resource === r || n.heat?.includes(r)) && n.kind !== 'none');
       if (!game.discovered.has(c.id)) {
         if (make) hiddenMakers++;
         if (need) hiddenUsers++;
         continue;
       }
-      if (make) {
+      if (make || fertilizer) {
+        const amount = make ? c.makes.filter((m) => m.resource === r).reduce((sum, m) => sum + c.output(m), 0) : 0;
         makers.push({
           conv: c,
           name: c.name,
           state: c.state,
-          amount: c.growth && !make.byproduct ? `+${c.output(make).toFixed(1)}` : `+${num(c.output(make))}`,
-          note: make.byproduct ? 'side product' : '',
+          amount: make ? `+${num(amount)}` : '',
+          note: make?.byproduct ? 'side product' : fertilizer && !make ? `from ${fertilizer.resource.name}` : '',
         });
       }
       if (need) {
         let note = '';
-        if (need.kind === 'catalyst') note = `needs ≥ ${num(need.atLeast)} in stock, not used up`;
-        else if (need.kind === 'condition') note = need.atMost === 0 ? `only while ${r.name} is 0` : `only while ≤ ${num(need.atMost)}`;
+        if (need.kind === 'heat') note = `needs a fire at ${num(need.atLeast)}–${num(need.atMost)}°`;
+        else if (need.kind === 'catalyst') note = `needs ≥ ${num(need.minStock)} in stock, not used up`;
+        else if (need.kind === 'optional') note = `takes some if there is${need.atLeast > 0 ? ` (above ${num(need.atLeast)})` : ''}`;
+        else if (need.kind === 'condition') note = need.atMost === 0 ? `only while ${r.name} is 0` : `only while ≤ ${num(need.maxStock)}`;
         else if (need.atLeast > need.amount) note = `only while stock ≥ ${num(need.atLeast)}`;
+        const used = c.needs.filter((n) => n.resource === r && (n.kind === 'consume' || n.kind === 'optional')).reduce((sum, n) => sum + c.inAmount(n), 0);
         users.push({
           conv: c,
           name: c.name,
           state: c.state,
-          amount: need.kind === 'consume' ? `−${num(need.amount)}` : '',
+          amount: used > 0 ? `${need.kind === 'optional' ? '≤' : '−'}${num(used)}` : '',
           note,
         });
       }
@@ -65,8 +71,28 @@
         amount: u.costs.find((k) => k.resource === r)!.amount,
       }));
 
+    const fade = r.def.fade;
     return {
       amount: r.amount.toFixed(1),
+      unit: r.def.unit ?? '',
+      fade: fade
+        ? {
+            rate: r.fadeRate,
+            into: fade.into ? game.resource(fade.into) : null,
+            awakeOnly: !!fade.awakeOnly,
+            slowed: r.fadeMult < 1,
+          }
+        : null,
+      rotsFrom: game.resources.filter((x) => x.def.fade?.into === r.id),
+      regen: r.def.regen ?? 0,
+      health: game.healthDef?.res === r.id
+        ? {
+            parts: game.healthParts(),
+            target: game.healthTarget(),
+            stamina: game.resource(game.healthDef.staminaRes),
+            work: game.workFactor(),
+          }
+        : null,
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
       makers,
       users,
@@ -131,11 +157,50 @@
 
   <div class="stock">
     <div class="numbers">
-      <b>{view.amount}</b><span class="max">/ {res.max}</span>
+      <b>{view.amount}{view.unit}</b><span class="max">/ {num(res.max)}</span>
       <span class="rate {trend.direction}">{trend.text}</span>
     </div>
     <div class="bar"><div style="width: {view.ratio * 100}%"></div></div>
   </div>
+
+  {#if view.health}
+    {@const h = view.health}
+    <section>
+      <h3>Where it comes from <small>heading to {Math.round(Math.min(100, h.target))}%</small></h3>
+      <ul class="health">
+        {#each h.parts as p}
+          <li>
+            <span>{p.name}</span>
+            <span class="hbar"><span style="width: {(p.points / Math.max(1, p.max)) * 100}%"></span></span>
+            <b>{Math.round(p.points)}</b><small>/{p.max}</small>
+          </li>
+        {/each}
+      </ul>
+      <p class="note-text">
+        All of them together are 110: missing a little still gets you to 100%. Health moves slowly towards its target.
+        Now it sets your ⚡ Stamina limit to {Math.round(h.stamina.max)} and makes manual work (nodes that use Stamina) ×{h.work.toFixed(2)}.
+      </p>
+    </section>
+  {/if}
+
+  {#if view.fade || view.regen || view.rotsFrom.length}
+    <section>
+      <h3>Over time</h3>
+      {#if view.fade}
+        <p class="note-text">
+          ⌛ Loses {num(view.fade.rate * 100)}% of its stock every second{view.fade.awakeOnly ? ' while you are awake' : ''}{view.fade.slowed ? ' (slowed down)' : ''}{view.fade.into
+            ? `, turning into ${view.fade.into.def.icon} ${view.fade.into.name}`
+            : ''}. It settles where what comes in equals what fades.
+        </p>
+      {/if}
+      {#if view.regen}
+        <p class="note-text">🌱 Recovers by itself: +{num(view.regen)} a second.</p>
+      {/if}
+      {#each view.rotsFrom as src}
+        <p class="note-text">Comes from {src.def.icon} {src.name} rotting.</p>
+      {/each}
+    </section>
+  {/if}
 
   <section>
     <h3>Made by <small>per cycle</small></h3>
@@ -337,6 +402,43 @@
   }
   .amount.ok {
     color: var(--ok);
+  }
+  .note-text {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .health {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+    font-size: 12.5px;
+  }
+  .health li {
+    display: grid;
+    grid-template-columns: 9ch 1fr 3ch 3ch;
+    align-items: center;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .health b {
+    text-align: right;
+  }
+  .health small {
+    color: var(--muted);
+  }
+  .hbar {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .hbar span {
+    display: block;
+    height: 100%;
+    background: var(--c);
   }
   .empty,
   .hidden {

@@ -15,6 +15,30 @@
     return out;
   });
 
+  /** Stock levels that matter (a node's minimum, a fire's range), as marks on the bar. */
+  const marks = $derived.by(() => {
+    ui.frame;
+    const map = new Map<string, number[]>();
+    const add = (id: string, level: number) => {
+      const list = map.get(id) ?? [];
+      if (!list.some((x) => Math.abs(x - level) < 0.5)) list.push(level);
+      map.set(id, list);
+    };
+    for (const c of game.converters) {
+      if (!game.discovered.has(c.id)) continue;
+      for (const n of [...c.needs, ...c.guards]) {
+        if (n.guard && !n.guard.enabled) continue;
+        if (n.heat) {
+          for (const f of n.heat) {
+            add(f.id, n.atLeast);
+            add(f.id, n.atMost);
+          }
+        } else if (n.atLeast > 0 && !n.optional) add(n.resource.id, n.minStock);
+      }
+    }
+    return map;
+  });
+
   function row(i: number) {
     const r = game.resources[i];
     return {
@@ -23,8 +47,11 @@
       icon: r.def.icon,
       color: r.def.color,
       amount: whole(r.amount),
-      max: r.max,
+      unit: r.def.unit ?? '',
+      max: Math.round(r.max),
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
+      fades: r.fadeRate > 0,
+      marks: (marks.get(r.id) ?? []).filter((x) => x > 0 && x < r.max).map((x) => x / r.max),
     };
   }
 </script>
@@ -44,9 +71,12 @@
           onpointerleave={() => ui.hoverResource === r.id && (ui.hoverResource = null)}
         >
           <span class="icon">{r.icon}</span>
-          <span class="name">{r.name}</span>
-          <span class="amount"><b>{r.amount}</b><span class="max">/{r.max}</span></span>
-          <span class="bar"><span style="width: {r.ratio * 100}%; background: {r.color}"></span></span>
+          <span class="name">{r.name}{#if r.fades}<span class="fade" title="Fades: loses a share of its stock every second">⌛</span>{/if}</span>
+          <span class="amount"><b>{r.amount}{r.unit}</b><span class="max">/{r.max}</span></span>
+          <span class="bar"
+            ><span class="fill" style="width: {r.ratio * 100}%; background: {r.color}"></span>
+            {#each r.marks as m}<i class="mark" style="left: {m * 100}%"></i>{/each}</span
+          >
         </button>
       {/each}
     </section>
@@ -126,7 +156,7 @@
     white-space: nowrap;
   }
   .amount b {
-    min-width: 3ch;
+    min-width: 4ch;
     text-align: right;
     font-weight: 650;
   }
@@ -142,15 +172,29 @@
     height: 2px;
     border-radius: 1px;
     background: var(--panel-2);
-    overflow: hidden;
   }
   .row:hover .bar,
   .row.focused .bar {
     background: var(--bg);
   }
-  .bar span {
+  .bar .fill {
     display: block;
     height: 100%;
     transition: width 0.2s linear;
+  }
+  /* An important level (a node's minimum, a fire's range). */
+  .mark {
+    position: absolute;
+    top: -2px;
+    width: 2px;
+    height: 4px;
+    margin-left: -1px;
+    background: var(--text);
+    opacity: 0.7;
+  }
+  .fade {
+    margin-left: 4px;
+    font-size: 9px;
+    opacity: 0.55;
   }
 </style>

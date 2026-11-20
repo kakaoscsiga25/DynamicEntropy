@@ -11,8 +11,9 @@
     ui.frame;
     const open = game.buildings.filter((u) => !u.bought);
     return {
-      buildings: ordered(open.filter((u) => !u.def.unlocks)),
-      skills: ordered(open.filter((u) => u.def.unlocks)),
+      sections: game.data.sections
+        .map((s) => ({ ...s, upgrades: ordered(open.filter((u) => u.def.section === s.id)) }))
+        .filter((s) => s.upgrades.length),
       built: game.buildings.filter((u) => u.bought),
     };
   });
@@ -21,35 +22,26 @@
 <aside class="drawer" aria-label="Build">
   <header>
     <div class="title">
-      <span class="kicker">Home, storage & skills</span>
+      <span class="kicker">Home, storage & mind</span>
       <h2>🏠 Build</h2>
     </div>
     <button class="close" onclick={toggleBuildings} aria-label="Close" title="Close (Esc)">✕</button>
   </header>
-  <p class="intro">Upgrades that aren't tied to one node: a better place to sleep, storage that raises how much of a resource you can keep, and skills that change how you work.</p>
+  <p class="intro">Upgrades that aren't tied to one node: your home, workshops, storage, and what you learn from your dreams.</p>
 
-  {#if view.buildings.length}
-    <div class="cards">
-      {#each view.buildings as u (u.id)}
-        <UpgradeCard upgrade={u} />
-      {/each}
-    </div>
-  {/if}
-
-  {#if view.skills.length}
+  {#each view.sections as sec (sec.id)}
     <section>
-      <h3>Skills</h3>
+      <h3>{sec.name}</h3>
+      {#if sec.intro}<p class="sec-intro">{sec.intro}</p>{/if}
       <div class="cards">
-        {#each view.skills as u (u.id)}
+        {#each sec.upgrades as u (u.id)}
           <UpgradeCard upgrade={u} />
         {/each}
       </div>
     </section>
-  {/if}
-
-  {#if !view.buildings.length && !view.skills.length}
+  {:else}
     <p class="intro">Everything is built.</p>
-  {/if}
+  {/each}
 
   {#if view.built.length}
     <section>
@@ -110,6 +102,11 @@
   .cards {
     display: grid;
     gap: 8px;
+  }
+  .sec-intro {
+    margin: -4px 0 8px;
+    font-size: 12px;
+    color: var(--muted);
   }
   section {
     margin-top: 18px;

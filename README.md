@@ -28,16 +28,20 @@ Add `?dev` to the URL to get a 10× speed toggle in the top bar.
 ```
 src/
   game/              Game logic, no UI code (unit tested)
-    data.ts          ALL game content: resources, converters (nodes), upgrades,
-                     plus visual data (icons, colors, islands, node positions)
+    content/         ALL game content, in plain data files:
+      resources.ts     resources (icons, colors, storage, fading), islands, Health
+      nodes.ts         nodes: what they use and make, cycle time, growth, map position
+      node-upgrades.ts upgrades shown on a node, grouped by node
+      upgrades.ts      Build panel upgrades, in sections (Home, Storage, Mind...)
+      index.ts         puts them together
     defs.ts          The shapes of that data, with comments explaining each field
-    engine.ts        The simulation: ticks, cycles, pace, recipes, upgrades, discovery
-    save.ts          Save / load (localStorage), migration of v1 saves
-    __tests__/       Tests
+    engine.ts        The simulation: ticks, cycles, recipes, fading, fires, Health...
+    save.ts          Save / load (localStorage)
+    __tests__/       Tests (engine rules on a small made-up game, content checks, saves)
   sim/               Headless simulator + bots for balancing (npm run sim)
   ui/
     session.svelte.ts  Game loop, autosave, playtime, player actions, UI state
-    layout.ts        Graph geometry: connection lines, island boxes
+    layout.ts        Graph geometry: connection lines, island boxes, card rows
     format.ts        Number / time formatting
   components/        Svelte components (graph, node cards, panels, modals)
   App.svelte         Page layout
@@ -47,40 +51,56 @@ legacy/              The original v1.3.2 Brython version (reference only)
 
 ### Changing game content
 
-Everything lives in `src/game/data.ts`. Converters run in the order they are
-listed (earlier ones get shared inputs first). `x`/`y` place the node on the map,
-`region` puts it on an island.
+Everything lives in `src/game/content/`; every field is explained in
+`src/game/defs.ts`. Nodes run in the order they are listed in `nodes.ts`
+(earlier ones get shared inputs first). `x`/`y` place the node on the map,
+`region` puts it on an island. `npm test` checks the content for typos,
+unreachable resources and costs that can never be paid.
 
 Each node works in its own loop, a **cycle**: it takes the inputs when it starts
 (or waits for them), runs (and may be interrupted, e.g. by falling asleep), and
-at the end puts the outputs into storage once they fit (byproducts and Sleep /
-Wake up fill up to the limit instead of waiting). `cycle` sets its length in seconds (default
-1 s; the game clock ticks every 0.1 s). Nodes that use a resource marked
-`awake` (Stamina) pause while you're asleep (you have `dream` resource, Dreaming,
-or Sleep / Wake up is working). The player's **pace** slider (unlocked by the Steady pace
-skill, up to 200% with Overtime) changes how fast the cycles run: inputs per
-second follow the pace, outputs per second follow 1.3·p − 0.3·p², so slower is
-more efficient and faster is wasteful. The slider moves in 1% steps (minimum
-10%) and its speed applies at once; a cycle that was running when it changed
-gives the output of the faster of the two paces (so slowing down mid-cycle isn't
-a trick), and the new pace's efficiency applies from the next cycle.
+at the end puts the outputs into storage once they fit (byproducts, the Field's
+crops and Sleep / Wake up / nature fill up to the limit instead of waiting).
+`cycle` sets its length in seconds (default 1 s; the game clock ticks every
+0.1 s). Nodes that use a resource marked `awake` (Stamina) pause while you're
+asleep.
 
-Upgrades marked `building: true` appear in the **Build** panel instead of on a
-node; `capacity` raises storage limits, `unlocks` makes it a skill.
+The mechanics, in short:
+
+- **Fading** (`fade` on a resource): it loses a share of its stock every second
+  (food rots, fires cool, dreams are forgotten), so it settles where what comes
+  in equals what fades. `into` turns the lost part into something else (Fruit →
+  Compost). Preservation buildings slow it down.
+- **Fires** are resources marked `heat` (temperatures). A fireplace has a
+  `throttle` (wood per cycle, set by the player): more wood, hotter fire. Nodes
+  with `heat: [min, max]` work while any fire is in that range.
+- **The Field** has `parts` (crops) whose shares the player sets; `optional`
+  inputs take what's there (fertilizer) and can `yield` something (Soil).
+- **Growth**: output grows with a stock (linear, with an optional floor `base`),
+  or `logistic` for living stocks (fish, sheep): fastest when half full.
+- **Health** (`HEALTH` in resources.ts) follows the sum of its sources (food,
+  warmth, home, hygiene: 110 together) and sets the Stamina limit and how much
+  manual work makes.
+- **Wear**: after a `tool` upgrade a node's tool wears out; sharpen it in time.
+- **Mind** upgrades (paid with Insight from the dream journal) add skills
+  (pace, thermostat, maintenance) and automatic rules (`guard`) to nodes.
+- **Nature** nodes run by themselves and can't be stopped (fish spawning, water
+  seeping into the mine).
 
 ### Balancing with the simulator
 
 ```bash
 npm run sim                      # every bot, up to 24h of game time
-npm run sim -- --bot planner --full --hours 12
+npm run sim -- --bot micro --full --hours 12
 ```
 
 Bots play the game headlessly (thousands of times faster than real time) and
 report when they finished, the purchase timeline, how often each node was
 running / waiting (and for what), and how full each resource was. Run it after
-changing numbers in `data.ts`. The occasional-player bots (`visit-10m`,
-`visit-30m`, and their `+pace` versions that use the pace slider) need longer
-limits: `--hours 60 --stuck 12`.
+changing numbers in `content/`. Bots: `micro` (micromanages every tick),
+`planner` (sensible, no micromanagement), `visit-10m` / `visit-30m` (check in
+every 10 / 30 minutes), `idle` (turns everything on once; doesn't have to
+finish). The visitors need longer limits: `--hours 30 --stuck 4`.
 
 (Until v2.0 the rules were verified to match v1.3.2 exactly by a "golden" replay
 test; it was retired when the rules started to change. See git history.)

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Upgrade } from '../game/engine';
-  import { ui, buyUpgrade } from '../ui/session.svelte';
+  import { game, ui, buyUpgrade } from '../ui/session.svelte';
   import { num, stock } from '../ui/format';
 
   let { upgrade }: { upgrade: Upgrade } = $props();
@@ -22,8 +22,21 @@
       requires: u.requires.map((r) => ({ name: r.name, ok: r.bought })),
       effects: u.def.final ? [] : u.effects(),
       capacity: u.capacityEffects(),
+      fade: (u.def.fade ?? []).map((f) => {
+        const r = game.resource(f.res);
+        return { resource: r, before: r.fadeRate, after: r.fadeRate * f.factor };
+      }),
+      builds: game.converters.filter((c) => c.def.requires === u.id),
+      guard: u.def.guard ? { node: game.converter(u.def.guard.converter).name, label: u.def.guard.label } : null,
     };
   });
+
+  const SKILL_TEXT: Record<string, string> = {
+    pace: 'Unlocks the <b>pace</b> slider on every node (10–100%): slower makes less per second, but gets up to 30% more out of each input.',
+    overclock: 'Pace can go up to <b>200%</b>: more per second, but each input gives less (down to 70%).',
+    thermostat: 'Fires keep a <b>temperature</b> you set: the wood is added by itself.',
+    maintenance: 'Tools are <b>sharpened by themselves</b> when they are worn down to 30% (if you can pay).',
+  };
 
   function line(kind: 'need' | 'make', amountBefore: number, amountAfter: number) {
     const what = kind === 'need' ? 'uses' : 'makes';
@@ -52,11 +65,32 @@
     {#if upgrade.def.final}
       <li class="secret">Effect: ???</li>
     {/if}
-    {#if upgrade.def.unlocks === 'pace'}
-      <li>Unlocks the <b>pace</b> slider on every node (10–100%): slower makes less per second, but gets up to 30% more out of each input.</li>
-    {:else if upgrade.def.unlocks === 'overclock'}
-      <li>Pace can go up to <b>200%</b>: more per second, but each input gives less (down to 70%).</li>
+    {#if upgrade.def.text}
+      <li class="text">{upgrade.def.text}</li>
     {/if}
+    {#if upgrade.def.unlocks}
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+      <li>{@html SKILL_TEXT[upgrade.def.unlocks]}</li>
+    {/if}
+    {#each view.builds as c}
+      <li>Builds a new node: <b>{c.name}</b></li>
+    {/each}
+    {#if view.guard}
+      <li>🤖 <b>{view.guard.node}:</b> {view.guard.label} <span class="sub">(can be switched off)</span></li>
+    {/if}
+    {#if upgrade.def.home}
+      <li>❤️ Home +{upgrade.def.home} Health</li>
+    {/if}
+    {#if upgrade.def.tool}
+      <li>🔧 Uses a tool: it wears out and needs sharpening</li>
+    {/if}
+    {#each view.fade as f}
+      <li>
+        <span class="icon">{f.resource.def.icon}</span>
+        {f.resource.name} fades {num(f.before * 100)}%/s → {num(f.after * 100)}%/s
+        <span class="tag good">▲</span>
+      </li>
+    {/each}
     {#each view.capacity as c}
       <li>
         <span class="icon">{c.resource.def.icon}</span>
@@ -168,6 +202,9 @@
   .secret {
     color: var(--dream);
     font-style: italic;
+  }
+  .text {
+    color: var(--muted);
   }
   .tag {
     font-size: 10px;

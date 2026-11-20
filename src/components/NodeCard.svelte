@@ -1,10 +1,13 @@
 <script lang="ts">
   import type { Converter, Recipe } from '../game/engine';
-  import { game, ui, select, toggleConverter, setPace } from '../ui/session.svelte';
+  import { game, ui, select, toggleConverter, setPace, setThrottle, sharpen } from '../ui/session.svelte';
   import { PACE_MIN, PACE_STEP, TICK_MS } from '../game/engine';
-  import { NODE_W, NODE_H } from '../ui/layout';
+  import { NODE_W, NODE_H, displayLines, type DisplayLine } from '../ui/layout';
+  import { num } from '../ui/format';
   import RecipeChip from './RecipeChip.svelte';
+  import PartsBar from './PartsBar.svelte';
   import { STATE_LABEL } from './states';
+  import { settleTemp } from './fire';
 
   let {
     conv,
@@ -20,16 +23,19 @@
   // Engine objects aren't reactive: re-read them whenever ui.frame changes.
   const view = $derived.by(() => {
     ui.frame;
+    // Inputs that keep the cycle from starting / going on, outputs that don't fit.
+    const blocking = conv.state === 'noInput' ? conv.blockingNeeds() : conv.state === 'interrupted' ? conv.interruptingNeeds() : [];
+    const blockedOut = conv.state === 'full' ? conv.blockedOutputs() : [];
+    const matches = (list: Recipe[], d: DisplayLine) => list.some((r) => r === d.recipe || (r.resource === d.recipe.resource && r.kind === d.recipe.kind));
+    const fire = game.fireOf(conv);
     return {
       name: conv.name,
       state: conv.state,
-      needs: [...conv.needs],
-      makes: [...conv.makes],
-      // Inputs that keep the cycle from starting / going on, outputs that don't fit.
-      bad: new Set<Recipe>(
-        conv.state === 'noInput' ? conv.blockingNeeds() : conv.state === 'interrupted' ? conv.interruptingNeeds() : [],
-      ),
-      blockedOut: new Set<Recipe>(conv.state === 'full' ? conv.blockedOutputs() : []),
+      needs: displayLines(conv, 'in').map((d) => ({ ...d, bad: matches(blocking, d) })),
+      makes: displayLines(conv, 'out').map((d) => ({ ...d, full: matches(blockedOut, d) })),
+      /** A rule (from the Mind) is holding it back. */
+      ruled: blocking.some((r) => r.guard),
+      rules: conv.guards.filter((g) => g.guard?.enabled).map((g) => g.guard!.label),
       factor: conv.growthFactor(),
       buyable: conv.upgrades.filter((u) => u.isBuyable()).length,
       open: conv.upgrades.filter((u) => !u.bought).length,
@@ -37,9 +43,16 @@
       pending: conv.pacePending,
       paceMax: game.paceMax(),
       /** The pace slider (after the Steady pace skill). */
-      slider: !conv.unstoppable && game.paceMax() > 0,
+      slider: conv.pacable && game.paceMax() > 0,
       /** Pace shown in the strip in the zoomed-out overview, where there's no slider. */
-      showPace: !conv.unstoppable && game.paceMax() > 0 && (conv.pace !== 1 || conv.pacePending),
+      showPace: conv.pacable && game.paceMax() > 0 && (conv.pace !== 1 || conv.pacePending),
+      throttle: conv.throttle,
+      target: conv.target,
+      settle: fire ? settleTemp(game, conv) : null,
+      wears: conv.wears,
+      condition: conv.condition,
+      canSharpen: conv.wears && conv.condition < 100 && game.sharpenCost(conv).every((k) => k.resource.canTake(k.amount)),
+      sharpenText: game.sharpenCost(conv).map((k) => `${num(k.amount)} ${k.resource.name}`).join(', '),
     };
   });
 
@@ -68,6 +81,14 @@
     toggleConverter(conv.id);
   }
 
+  function onSharpen(e: MouseEvent) {
+    e.stopPropagation();
+    sharpen(conv.id);
+  }
+
+  /** Keeps clicks on sliders from selecting the node. */
+  const stop = (e: Event) => e.stopPropagation();
+
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -94,7 +115,9 @@
   onpointerleave={() => ui.hoverNode === conv.id && (ui.hoverNode = null)}
 >
   <!-- The colored strip on the left is the on/off switch; it also shows the pace when it isn't 100%. -->
-  {#if conv.unstoppable}
+  {#if conv.nature}
+    <span class="power fixed nature" title="Nature: runs by itself, can't be stopped">🌿</span>
+  {:else if conv.unstoppable}
     <span class="power fixed" title="Always on, can't be stopped">∞</span>
   {:else}
     <button
@@ -124,6 +147,9 @@
           >×{view.factor.toFixed(1)}</span
         >
       {/if}
+      {#if view.rules.length}
+        <span class="rule" class:holding={view.ruled} title="Automatic rule: {view.rules.join('; ')}">🤖</span>
+      {/if}
       {#if view.buyable > 0}
         <span class="badge ready" title="{view.buyable} upgrade(s) can be bought">⬆ {view.buyable}</span>
       {:else if view.open > 0}
@@ -133,24 +159,52 @@
     <!-- What goes in (left), what comes out (right): one resource per row. -->
     <div class="io">
       <div class="tbl">
-        {#each view.needs as r (r)}
-          <RecipeChip recipe={r} side="in" bad={view.bad.has(r)} />
+        {#each view.needs as d (d.recipe)}
+          <RecipeChip recipe={d.recipe} side="in" bad={d.bad} value={Math.abs(d.amount - d.base) > 1e-9 ? d.amount : undefined} />
         {/each}
       </div>
       <span class="arrow">→</span>
       <div class="tbl">
-        {#each view.makes as r (r)}
-          <RecipeChip
-            recipe={r}
-            side="out"
-            full={view.blockedOut.has(r)}
-            value={!r.byproduct && (conv.growth || view.pace !== 1) ? conv.output(r, view.factor) : undefined}
-          />
+        {#each view.makes as d (d.recipe)}
+          <RecipeChip recipe={d.recipe} side="out" full={d.full} value={Math.abs(d.amount - d.base) > 1e-9 ? d.amount : undefined} />
         {:else}
           <span class="nothing" title="Makes nothing">–</span>
         {/each}
       </div>
     </div>
+    {#if view.throttle !== null}
+      <div class="slider-row" title="Wood per cycle: more wood, hotter fire. It settles at the temperature on the right.">
+        <span class="lbl">🪵</span>
+        <input
+          type="range"
+          min={conv.def.throttle!.min}
+          max={conv.def.throttle!.max}
+          step={conv.def.throttle!.step}
+          value={view.throttle}
+          aria-label="{view.name} wood per cycle"
+          onclick={stop}
+          onkeydown={stop}
+          oninput={(e) => setThrottle(conv.id, Number(e.currentTarget.value))}
+        />
+        <span class="pv">{view.throttle.toFixed(2)}</span>
+        <span class="pv temp" title={view.target !== null ? 'Thermostat: keeps this temperature' : 'Settles at'}
+          >{view.target !== null ? '🌡' : '→'}{Math.round(view.target ?? view.settle ?? 0)}°</span
+        >
+      </div>
+    {/if}
+    {#if conv.parts.length}
+      <PartsBar {conv} />
+    {/if}
+    {#if view.wears}
+      <div class="tool" class:low={view.condition <= 30} class:broken={view.condition <= 0} title="Tool condition: worn tools make less (broken: 40%)">
+        <span class="lbl">🔧</span>
+        <span class="tbar"><span style="width: {view.condition}%"></span></span>
+        <span class="pv">{view.condition <= 0 ? 'broken' : `${Math.ceil(view.condition)}%`}</span>
+        <button class="sharpen" disabled={!view.canSharpen} onclick={onSharpen} title="{view.condition <= 0 ? 'Repair' : 'Sharpen'}: {view.sharpenText}"
+          >{view.condition <= 0 ? 'Repair' : 'Sharpen'}</button
+        >
+      </div>
+    {/if}
     {#if view.slider}
       <div class="pace-row">
         <input
@@ -161,8 +215,8 @@
           value={view.pace}
           aria-label="{view.name} pace"
           title="Pace: slower gets more out of each input{view.paceMax > 1 ? ', faster makes more per second' : ''}"
-          onclick={(e) => e.stopPropagation()}
-          onkeydown={(e) => e.stopPropagation()}
+          onclick={stop}
+          onkeydown={stop}
           oninput={(e) => setPace(conv.id, Number(e.currentTarget.value))}
         />
         <span
@@ -255,6 +309,80 @@
     cursor: default;
     font-size: 15px;
     color: var(--dream);
+  }
+  .power.nature {
+    font-size: 13px;
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+  .rule {
+    flex: none;
+    font-size: 12px;
+    opacity: 0.55;
+  }
+  .rule.holding {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px var(--warn));
+  }
+  .slider-row,
+  .tool {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+  }
+  .slider-row input {
+    flex: 1;
+    min-width: 0;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .lbl {
+    flex: none;
+    font-size: 12px;
+  }
+  .slider-row .temp {
+    width: 5ch;
+    color: #ffcf9e;
+  }
+  .tbar {
+    flex: 1;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .tbar span {
+    display: block;
+    height: 100%;
+    background: var(--ok);
+  }
+  .tool.low .tbar span {
+    background: var(--warn);
+  }
+  .tool.broken .pv {
+    color: var(--bad);
+  }
+  .sharpen {
+    flex: none;
+    padding: 0 6px;
+    height: 17px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .sharpen:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  :global(.far) .slider-row,
+  :global(.far) .tool,
+  :global(.far) .rule {
+    display: none;
   }
 
   /* ---- content */

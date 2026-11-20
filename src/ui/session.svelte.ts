@@ -151,13 +151,49 @@ export function setPace(id: string, pace: number) {
   if (game.setPace(id, pace)) refresh();
 }
 
+/** Sets a fireplace's fuel (wood per cycle). Turns its thermostat off. */
+export function setThrottle(id: string, value: number) {
+  if (game.setThrottle(id, value)) refresh();
+}
+
+/** Thermostat: the temperature a fireplace keeps by itself (null: off). */
+export function setTarget(id: string, target: number | null) {
+  if (game.setTarget(id, target)) refresh();
+}
+
+/** Splits the Field between its crops. */
+export function setShares(id: string, shares: number[]) {
+  if (game.setShares(id, shares)) refresh();
+}
+
+/** Switches an automatic rule of a node on or off. */
+export function setGuard(id: string, index: number, enabled: boolean) {
+  if (game.setGuard(id, index, enabled)) refresh();
+}
+
+/** Sharpens (or repairs) a node's tool. */
+export function sharpen(id: string) {
+  if (game.sharpen(id)) {
+    refresh();
+    toast(`${game.converter(id).name}: tool as good as new`);
+  }
+}
+
+const UNLOCK_TOAST: Record<string, string> = {
+  pace: 'Pace unlocked: select a node to set how hard it works',
+  overclock: "Overtime: a node's pace can now go up to 200%",
+  thermostat: 'Thermostat: select a fireplace and set the temperature it should keep',
+  maintenance: 'Maintenance: tools are sharpened by themselves at 30%',
+};
+
 export function buyUpgrade(id: string) {
   const u = game.upgrade(id);
   if (!game.buy(id)) return;
   refresh();
+  const unlocked = game.converters.find((c) => c.def.requires === id);
   if (u.def.final) ui.modal = 'ending';
-  else if (u.def.unlocks === 'pace') toast('Pace unlocked: select a node to set how hard it works');
-  else if (u.def.unlocks === 'overclock') toast('Overtime: a node\'s pace can now go up to 200%');
+  else if (u.def.unlocks) toast(UNLOCK_TOAST[u.def.unlocks]);
+  else if (unlocked) toast(`Built: ${unlocked.name}`);
   else toast(`Bought: ${u.name}`);
 }
 
@@ -203,12 +239,14 @@ export function start() {
 
   const store = storage();
   const loaded = store ? loadSave(store, game) : { kind: 'none' as const };
-  if (loaded.kind === 'loaded' || loaded.kind === 'migrated') {
+  if (loaded.kind === 'loaded') {
     playtimeBase = loaded.save.playtime;
-    toast(loaded.kind === 'migrated' ? 'Your v1 save was imported' : 'Welcome back');
+    toast('Welcome back');
   } else if (loaded.kind === 'error') {
     toast('Could not read the saved game, starting fresh');
   } else {
+    // A save from before the v3 rework doesn't fit the new game: start over.
+    if (loaded.kind === 'outdated') toast('The game was redesigned: your old save can\'t be used, starting fresh');
     ui.modal = 'howto';
   }
   sessionStart = performance.now();

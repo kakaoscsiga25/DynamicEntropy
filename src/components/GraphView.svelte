@@ -57,7 +57,7 @@
         const related = c.id === focus.id || neighbors.get(focus.id)?.has(c.id);
         map.set(c.id, related || !focus.strong ? '' : 'dim');
       } else {
-        const uses = c.needs.some((n) => n.resource.id === focus.id && n.kind !== 'none');
+        const uses = c.needs.some((n) => (n.resource.id === focus.id || n.heat?.some((r) => r.id === focus.id)) && n.kind !== 'none');
         const makes = c.makes.some((m) => m.resource.id === focus.id && m.amount > 0);
         const cls = uses && makes ? 'both' : uses ? 'consumer' : makes ? 'producer' : focus.strong ? 'dim' : 'faint';
         map.set(c.id, cls);
@@ -68,8 +68,8 @@
 
   function edgeActive(e: Edge): boolean {
     if (e.catalyst) {
-      const need = e.to.needs.find((n) => n.resource === e.resource);
-      return !!need && e.resource.amount >= need.atLeast && e.resource.amount < need.atMost;
+      const n = e.need;
+      return e.resource.amount >= n.minStock && e.resource.amount <= n.maxStock;
     }
     return e.from.state === 'ok';
   }
@@ -160,7 +160,7 @@
 
   /** Fits everything discovered so far into the view. */
   export function fit() {
-    const b = worldBounds(discovered);
+    const b = worldBounds(discovered, game);
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
     const margin = 48;
@@ -266,6 +266,8 @@
     <span><i class="ln dashed"></i>Needs stock</span>
     <span class="sep"></span>
     <span>⚡💧🔥 lines appear on hover</span>
+    <span class="sep"></span>
+    <span>🌿 nature · 🤖 rule · ⌛ fades</span>
   </div>
 </div>
 

@@ -198,6 +198,7 @@
       <p class="pace-text">
         Wood per cycle ({num(view.cycleSeconds)} s). The fire cools by {num(f.fade * 100)}% a second, so with this much wood it
         settles at <b>{Math.round(f.settle)}°</b>. More wood, hotter fire; it takes a few minutes to get there.
+        {#if f.target !== null}Now the thermostat sets the wood.{/if}
       </p>
       {#if f.thermostat}
         <div class="pace-row">

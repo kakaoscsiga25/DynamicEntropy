@@ -31,7 +31,7 @@ export const NODES: ConverterDef[] = [
   // ======================================================== Nature: runs by itself
   {
     // Fish multiply fastest when the pond is half full.
-    id: 'spawning', name: 'Spawning', region: 'pond', x: -40, y: 700, nature: true, cycle: 2,
+    id: 'spawning', name: 'Spawning', region: 'pond', x: -40, y: 760, nature: true, cycle: 2,
     growth: { res: 'fish', shape: 'logistic' },
     needs: [{ res: 'fish', amount: 0, atLeast: 1 }],
     makes: [{ res: 'fish', amount: 0.6 }],
@@ -48,7 +48,7 @@ export const NODES: ConverterDef[] = [
   },
   {
     // The deeper the mine, the more water seeps in.
-    id: 'seepage', name: 'Seepage', region: 'forge', x: 1920, y: 630, nature: true,
+    id: 'seepage', name: 'Seepage', region: 'forge', x: 1920, y: 720, nature: true,
     growth: { res: 'depth', perUnit: 0.05, maxFactor: 6 },
     needs: [{ res: 'depth', amount: 0, atLeast: 1 }],
     makes: [{ res: 'mine_water', amount: 0.02 }],
@@ -318,7 +318,7 @@ export const NODES: ConverterDef[] = [
   // ======================================================== Pond
   {
     // Only to get the pond going (slow, needs a net).
-    id: 'catch_fry', name: 'Catch fry', region: 'pond', x: -310, y: 700, cycle: 8,
+    id: 'catch_fry', name: 'Catch fry', region: 'pond', x: -310, y: 760, cycle: 8,
     needs: [
       { res: 'stamina', amount: 4 },
       { res: 'fabric', amount: 0.05 },
@@ -327,7 +327,7 @@ export const NODES: ConverterDef[] = [
   },
   {
     // Takes fish out of the pond: keep it about half full and it refills fastest.
-    id: 'fishing', name: 'Fishing', region: 'pond', x: -40, y: 850,
+    id: 'fishing', name: 'Fishing', region: 'pond', x: -40, y: 910,
     needs: [
       { res: 'fish', amount: 1 },
       { res: 'stamina', amount: 2 },
@@ -338,7 +338,7 @@ export const NODES: ConverterDef[] = [
   // ======================================================== Forge
   {
     // Pumped-out mine water is good water.
-    id: 'pump', name: 'Pump', region: 'forge', x: 1650, y: 630,
+    id: 'pump', name: 'Pump', region: 'forge', x: 1650, y: 720,
     needs: [
       { res: 'mine_water', amount: 1 },
       { res: 'stamina', amount: 1 },
@@ -348,7 +348,7 @@ export const NODES: ConverterDef[] = [
   {
     // Digs deeper as it goes: more ore down there (×3 at 100 m), but more water
     // seeps in, and the mine floods above 20.
-    id: 'iron_mine', name: 'Iron mine', region: 'forge', x: 1920, y: 480,
+    id: 'iron_mine', name: 'Iron mine', region: 'forge', x: 1920, y: 570,
     growth: { res: 'depth', perUnit: 0.02, maxFactor: 3 },
     wear: { perCycle: 0.3, sharpen: [{ res: 'stamina', amount: 10 }], repair: [{ res: 'tool', amount: 1 }, { res: 'stamina', amount: 10 }] },
     needs: [
@@ -359,12 +359,12 @@ export const NODES: ConverterDef[] = [
     makes: [{ res: 'iron_ore', amount: 0.3 }, { res: 'depth', amount: 0.05, byproduct: true }],
   },
   {
-    id: 'iron_smelter', name: 'Iron smelter', region: 'forge', x: 1650, y: 480, cycle: 3, heat: [80, 100],
+    id: 'iron_smelter', name: 'Iron smelter', region: 'forge', x: 1650, y: 570, cycle: 3, heat: [80, 100],
     needs: [{ res: 'iron_ore', amount: 2 }],
     makes: [{ res: 'iron', amount: 1 }],
   },
   {
-    id: 'tool_maker', name: 'Tool maker', region: 'forge', x: 1380, y: 480, cycle: 5, heat: [50, 80],
+    id: 'tool_maker', name: 'Tool maker', region: 'forge', x: 1380, y: 570, cycle: 5, heat: [50, 80],
     needs: [
       { res: 'iron', amount: 2 },
       { res: 'wood', amount: 5 },

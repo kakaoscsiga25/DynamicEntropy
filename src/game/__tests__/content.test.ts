@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'vitest';
 import { Game } from '../engine.ts';
 import { DATA } from '../content/index.ts';
+import { regionBoxes } from '../../ui/layout.ts';
 
 const game = new Game();
 
@@ -84,6 +85,19 @@ describe('content', () => {
       for (let j = i + 1; j < nodes.length; j++) {
         const [a, b] = [nodes[i], nodes[j]];
         const overlap = Math.abs(a.x - b.x) < W + 20 && Math.abs(a.y - b.y) < H;
+        expect(overlap, `${a.id} / ${b.id}`).toBe(false);
+      }
+    }
+  });
+
+  test("islands don't overlap, even with every node shown and every upgrade bought", () => {
+    const g = new Game();
+    for (const u of g.upgrades) if (!u.def.final) u.apply();
+    const boxes = regionBoxes(g, g.converters);
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const [a, b] = [boxes[i], boxes[j]];
+        const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
         expect(overlap, `${a.id} / ${b.id}`).toBe(false);
       }
     }

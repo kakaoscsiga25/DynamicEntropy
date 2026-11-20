@@ -48,6 +48,8 @@
       color: r.def.color,
       amount: whole(r.amount),
       unit: r.def.unit ?? '',
+      /** Health (%) and temperatures (°) read fine without "/100". */
+      percent: r.def.unit === '%' || r.def.unit === '°',
       max: Math.round(r.max),
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),
       fades: r.fadeRate > 0,
@@ -72,7 +74,7 @@
         >
           <span class="icon">{r.icon}</span>
           <span class="name">{r.name}{#if r.fades}<span class="fade" title="Fades: loses a share of its stock every second">⌛</span>{/if}</span>
-          <span class="amount"><b>{r.amount}{r.unit}</b><span class="max">/{r.max}</span></span>
+          <span class="amount"><b>{r.amount}{r.unit}</b><span class="max">{r.percent ? '' : `/${r.max}`}</span></span>
           <span class="bar"
             ><span class="fill" style="width: {r.ratio * 100}%; background: {r.color}"></span>
             {#each r.marks as m}<i class="mark" style="left: {m * 100}%"></i>{/each}</span

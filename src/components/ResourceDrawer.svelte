@@ -157,7 +157,7 @@
 
   <div class="stock">
     <div class="numbers">
-      <b>{view.amount}{view.unit}</b><span class="max">/ {num(res.max)}</span>
+      <b>{view.amount}{view.unit}</b>{#if view.unit !== '%' && view.unit !== '°'}<span class="max">/ {num(res.max)}</span>{/if}
       <span class="rate {trend.direction}">{trend.text}</span>
     </div>
     <div class="bar"><div style="width: {view.ratio * 100}%"></div></div>
@@ -202,15 +202,17 @@
     </section>
   {/if}
 
-  <section>
-    <h3>Made by <small>per cycle</small></h3>
-    {@render rowList(view.makers, view.hiddenMakers, 'Nothing makes this yet.')}
-  </section>
+  {#if !view.health}
+    <section>
+      <h3>Made by <small>per cycle</small></h3>
+      {@render rowList(view.makers, view.hiddenMakers, view.rotsFrom.length ? 'No node makes this.' : 'Nothing makes this yet.')}
+    </section>
 
-  <section>
-    <h3>Used by <small>{view.runningUsers} of {view.users.length} running</small></h3>
-    {@render rowList(view.users, view.hiddenUsers, 'Nothing uses this yet.')}
-  </section>
+    <section>
+      <h3>Used by <small>{view.runningUsers} of {view.users.length} running</small></h3>
+      {@render rowList(view.users, view.hiddenUsers, 'Nothing uses this yet.')}
+    </section>
+  {/if}
 
   {#if view.upgrades.length}
     <section>

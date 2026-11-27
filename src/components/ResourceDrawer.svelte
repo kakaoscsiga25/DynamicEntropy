@@ -85,11 +85,10 @@
         : null,
       rotsFrom: game.resources.filter((x) => x.def.fade?.into === r.id),
       regen: r.def.regen ?? 0,
-      health: game.healthDef?.res === r.id
+      prod: game.productivityDef?.res === r.id
         ? {
-            parts: game.healthParts(),
-            target: game.healthTarget(),
-            stamina: game.resource(game.healthDef.staminaRes),
+            parts: game.productivityParts(),
+            target: Math.max(game.productivityDef.min, Math.min(100, game.productivityTarget())),
             work: game.workFactor(),
           }
         : null,
@@ -163,22 +162,23 @@
     <div class="bar"><div style="width: {view.ratio * 100}%"></div></div>
   </div>
 
-  {#if view.health}
-    {@const h = view.health}
+  {#if view.prod}
+    {@const h = view.prod}
     <section>
-      <h3>Where it comes from <small>heading to {Math.round(Math.min(100, h.target))}%</small></h3>
+      <h3>Where it comes from <small>heading to {Math.round(h.target)}%</small></h3>
       <ul class="health">
         {#each h.parts as p}
-          <li>
+          <li class:penalty={p.penalty}>
             <span>{p.name}</span>
-            <span class="hbar"><span style="width: {(p.points / Math.max(1, p.max)) * 100}%"></span></span>
-            <b>{Math.round(p.points)}</b><small>/{p.max}</small>
+            <span class="hbar"><span style="width: {(Math.abs(p.points) / Math.max(1, p.max)) * 100}%"></span></span>
+            <b>{p.penalty && Math.round(p.points) !== 0 ? '−' : ''}{Math.abs(Math.round(p.points))}</b><small>/{p.max}</small>
           </li>
         {/each}
       </ul>
       <p class="note-text">
-        All of them together are 110: missing a little still gets you to 100%. Health moves slowly towards its target.
-        Now it sets your ⚡ Stamina limit to {Math.round(h.stamina.max)} and makes manual work (nodes that use Stamina) ×{h.work.toFixed(2)}.
+        The good ones together are 110: missing a little still gets you to 100%. 🤒 Disease and 🤕 Injuries take points away.
+        Productivity moves slowly towards where it's heading (never below 1%).
+        Now everything you make by hand (nodes that use ⚡ Stamina) is ×{h.work.toFixed(2)}.
       </p>
     </section>
   {/if}
@@ -202,7 +202,7 @@
     </section>
   {/if}
 
-  {#if !view.health}
+  {#if !view.prod}
     <section>
       <h3>Made by <small>per cycle</small></h3>
       {@render rowList(view.makers, view.hiddenMakers, view.rotsFrom.length ? 'No node makes this.' : 'Nothing makes this yet.')}
@@ -427,6 +427,13 @@
   }
   .health b {
     text-align: right;
+  }
+  .health .penalty b,
+  .health .penalty > span:first-child {
+    color: var(--bad);
+  }
+  .health .penalty .hbar span {
+    background: var(--bad);
   }
   .health small {
     color: var(--muted);

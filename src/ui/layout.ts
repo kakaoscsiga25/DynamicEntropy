@@ -12,7 +12,7 @@ const REGION_LABEL = 26;
 export interface DisplayLine {
   recipe: Recipe;
   kind: RecipeKind | 'out';
-  /** Per cycle with the current settings (shares, fuel, growth, Health, wear, pace). */
+  /** Per cycle with the current settings (shares, fuel, growth, Productivity, wear, pace). */
   amount: number;
   /** The plain recipe amount (without settings and factors), to tell whether it differs. */
   base: number;
@@ -35,10 +35,13 @@ export function displayLines(c: Converter, side: 'in' | 'out'): DisplayLine[] {
   return out;
 }
 
-/** Roughly how tall a node's card is (islands make room for it). */
+/**
+ * How tall a node's card is, at most a couple of pixels off (islands make room
+ * for it, lines attach to its bottom).
+ */
 export function nodeHeight(c: Converter, game: Game): number {
   const rows = Math.max(1, displayLines(c, 'in').length, displayLines(c, 'out').length);
-  let h = 44 + rows * 22;
+  let h = 40 + rows * 22;
   if (c.throttle !== null) h += 26;
   if (c.parts.length) h += 26;
   if (c.def.wear) h += 22;
@@ -71,8 +74,28 @@ export interface Edge {
   arrow: string;
 }
 
+type Side = 'left' | 'right' | 'top' | 'bottom';
+
+/** A line before its geometry is known. */
+interface RawEdge extends Omit<Edge, 'd' | 'start' | 'mid' | 'arrow'> {
+  fromSide: Side;
+  toSide: Side;
+}
+
+/** Which sides of the two cards a line leaves and enters: the sides facing each other. */
+function facingSides(a: Converter, b: Converter): [Side, Side] {
+  const dx = b.def.x - a.def.x;
+  const dy = b.def.y - a.def.y;
+  if (Math.abs(dx) >= NODE_W * 0.75 && Math.abs(dx) >= Math.abs(dy) * 0.8) return dx > 0 ? ['right', 'left'] : ['left', 'right'];
+  return dy >= 0 ? ['bottom', 'top'] : ['top', 'bottom'];
+}
+
+/** Gap between the ends of lines sharing one side of a card (px). */
+const PORT_GAP_SIDE = 14;
+const PORT_GAP_TOP = 26;
+
 export function buildEdges(game: Game): Edge[] {
-  const edges = new Map<string, Edge>();
+  const raw = new Map<string, RawEdge>();
   for (const from of game.converters) {
     for (const make of from.makes) {
       if (make.amount <= 0) continue;
@@ -85,8 +108,9 @@ export function buildEdges(game: Game): Edge[] {
         // Conditions ("only while almost empty") and no-op needs are not flows.
         if (!need || need.kind === 'none' || need.kind === 'condition' || need.atMost < 1) continue;
         const id = `${from.id}>${to.id}:${make.resource.id}`;
-        if (edges.has(id)) continue;
-        edges.set(id, {
+        if (raw.has(id)) continue;
+        const [fromSide, toSide] = facingSides(from, to);
+        raw.set(id, {
           id,
           from,
           to,
@@ -94,41 +118,68 @@ export function buildEdges(game: Game): Edge[] {
           need,
           catalyst: need.kind === 'catalyst' || need.kind === 'heat',
           onDemand: make.byproduct || !!make.resource.def.hub,
-          ...edgeGeometry(from, to),
+          fromSide,
+          toSide,
         });
       }
     }
   }
-  return [...edges.values()];
-}
 
-/** Smooth curve between two nodes, leaving/entering on the sides facing each other. */
-function edgeGeometry(a: Converter, b: Converter) {
-  const ax = a.def.x, ay = a.def.y, bx = b.def.x, by = b.def.y;
-  const dx = bx - ax;
-  const dy = by - ay;
-  let x1: number, y1: number, x2: number, y2: number;
-  let c1x: number, c1y: number, c2x: number, c2y: number;
-  if (Math.abs(dx) >= NODE_W * 0.75 && Math.abs(dx) >= Math.abs(dy) * 0.8) {
-    // Mostly horizontal
-    const s = Math.sign(dx);
-    x1 = s > 0 ? ax + NODE_W : ax;
-    x2 = s > 0 ? bx : bx + NODE_W;
-    y1 = ay + NODE_H / 2;
-    y2 = by + NODE_H / 2;
-    const off = Math.max(40, Math.abs(x2 - x1) / 2);
-    [c1x, c1y, c2x, c2y] = [x1 + s * off, y1, x2 - s * off, y2];
-  } else {
-    // Mostly vertical
-    const s = Math.sign(dy) || 1;
-    x1 = ax + NODE_W / 2;
-    x2 = bx + NODE_W / 2;
-    y1 = s > 0 ? ay + NODE_H : ay;
-    y2 = s > 0 ? by : by + NODE_H;
-    const off = Math.max(30, Math.abs(y2 - y1) / 2);
-    [c1x, c1y, c2x, c2y] = [x1, y1 + s * off, x2, y2 - s * off];
+  // Lines that share a side of a card don't start (or end) at the same point:
+  // they're spread along it, in the order of where their other end is, so
+  // they don't cross right at the card and their arrows don't pile up.
+  const ports = new Map<string, number>(); // `${edge id}|from` → offset along the side
+  const groups = new Map<string, { key: string; other: Converter; side: Side }[]>();
+  for (const e of raw.values()) {
+    for (const [node, side, other, end] of [[e.from, e.fromSide, e.to, 'from'], [e.to, e.toSide, e.from, 'to']] as const) {
+      const g = `${node.id}|${side}`;
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push({ key: `${e.id}|${end}`, other, side });
+    }
+  }
+  for (const list of groups.values()) {
+    const vertical = list[0].side === 'left' || list[0].side === 'right';
+    list.sort((a, b) => (vertical ? a.other.def.y - b.other.def.y : a.other.def.x - b.other.def.x) || a.key.localeCompare(b.key));
+    const gap = vertical ? PORT_GAP_SIDE : PORT_GAP_TOP;
+    const limit = vertical ? NODE_H / 2 - 12 : NODE_W / 2 - 20;
+    list.forEach((p, i) => ports.set(p.key, Math.max(-limit, Math.min(limit, (i - (list.length - 1) / 2) * gap))));
   }
 
+  return [...raw.values()].map(({ fromSide, toSide, ...e }) => ({
+    ...e,
+    ...edgeGeometry(
+      anchor(e.from, fromSide, ports.get(`${e.id}|from`) ?? 0, game),
+      anchor(e.to, toSide, ports.get(`${e.id}|to`) ?? 0, game),
+    ),
+  }));
+}
+
+interface Anchor {
+  x: number;
+  y: number;
+  /** Direction the line leaves (or enters) the card: unit vector pointing away from it. */
+  nx: number;
+  ny: number;
+}
+
+/** A point on a card's side, `offset` px from the middle of that side. */
+function anchor(c: Converter, side: Side, offset: number, game: Game): Anchor {
+  const { x, y } = c.def;
+  switch (side) {
+    case 'left': return { x, y: y + NODE_H / 2 + offset, nx: -1, ny: 0 };
+    case 'right': return { x: x + NODE_W, y: y + NODE_H / 2 + offset, nx: 1, ny: 0 };
+    case 'top': return { x: x + NODE_W / 2 + offset, y, nx: 0, ny: -1 };
+    case 'bottom': return { x: x + NODE_W / 2 + offset, y: y + nodeHeight(c, game), nx: 0, ny: 1 };
+  }
+}
+
+/** Smooth curve between two cards, leaving and entering straight out of the sides. */
+function edgeGeometry(a: Anchor, b: Anchor) {
+  const { x: x1, y: y1 } = a;
+  const { x: x2, y: y2 } = b;
+  const horizontal = a.nx !== 0;
+  const off = horizontal ? Math.max(40, Math.abs(x2 - x1) / 2) : Math.max(30, Math.abs(y2 - y1) / 2);
+  const [c1x, c1y, c2x, c2y] = [x1 + a.nx * off, y1 + a.ny * off, x2 + b.nx * off, y2 + b.ny * off];
   // Bezier point at t = 0.5
   const mid: [number, number] = [(x1 + 3 * c1x + 3 * c2x + x2) / 8, (y1 + 3 * c1y + 3 * c2y + y2) / 8];
 

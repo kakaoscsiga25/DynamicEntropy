@@ -63,7 +63,7 @@
       // What multiplies the outputs now.
       factors: [
         ...(c.growth ? [{ name: `${c.growth.shape === 'logistic' ? 'Breeding' : 'Growth'} (${c.growth.resource.name})`, value: c.growthFactor() }] : []),
-        ...(c.needsAwake && game.healthDef ? [{ name: `Health ${Math.round(game.health())}%`, value: game.workFactor() }] : []),
+        ...(c.needsAwake && game.productivityDef ? [{ name: `Productivity ${Math.round(game.productivity())}%`, value: game.workFactor() }] : []),
         ...(c.wears ? [{ name: `Tool ${Math.ceil(c.condition)}%`, value: wearFactor(c.condition) }] : []),
         ...(c.pace !== 1 ? [{ name: `Pace ${Math.round(c.pace * 100)}%`, value: paceEfficiency(c.pace) }] : []),
       ],

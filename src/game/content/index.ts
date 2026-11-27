@@ -1,12 +1,12 @@
 // Puts the content files together into the data the engine uses.
-//   resources.ts      resources, islands, Health
+//   resources.ts      resources, islands, Productivity
 //   nodes.ts          nodes (what they use and make)
 //   node-upgrades.ts  upgrades shown on a node
-//   upgrades.ts       upgrades in the Build panel, in sections
+//   upgrades.ts       upgrades in the Build and Research panels, in sections
 // Balance check: `npm run sim` plays the game with bots and reports timings.
 
 import type { GameData, UpgradeDef } from '../defs.ts';
-import { HEALTH, REGIONS, RESOURCES } from './resources.ts';
+import { PRODUCTIVITY, REGIONS, RESOURCES } from './resources.ts';
 import { NODES } from './nodes.ts';
 import { NODE_UPGRADES } from './node-upgrades.ts';
 import { SECTIONS } from './upgrades.ts';
@@ -23,6 +23,6 @@ export const DATA: GameData = {
   regions: REGIONS,
   converters: NODES,
   upgrades: [...nodeUpgrades, ...sectionUpgrades],
-  sections: SECTIONS.map(({ id, name, intro }) => ({ id, name, intro })),
-  health: HEALTH,
+  sections: SECTIONS.map(({ upgrades: _, ...section }) => section),
+  productivity: PRODUCTIVITY,
 };

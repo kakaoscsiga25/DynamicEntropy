@@ -1,12 +1,12 @@
 // Save / load. Saves use stable ids (not display names), so renaming things in
-// the content files doesn't break saves. Saves from before the v3 content
-// rework (format 2, v1.x) don't fit the new game and are not loaded.
+// the content files doesn't break saves. Saves of an older format (before the
+// Productivity rework: format 3 and older, v1.x) don't fit the game and are not loaded.
 
 import type { Cycle, Game } from './engine.ts';
 
 export const SAVE_KEY = 'dynamic-entropy-save';
 const LEGACY_KEYS = ['save_version', 'save_resources', 'save_upgrades', 'save_playtime'];
-export const SAVE_FORMAT = 3;
+export const SAVE_FORMAT = 4;
 
 /** Per-node settings and state that aren't the defaults. */
 export interface NodeSave {
@@ -83,12 +83,9 @@ export function restore(game: Game, save: SaveData): void {
     u.apply();
     game.boughtOrder.push(id);
   }
-  // Health first: it sets the Stamina limit.
-  const order = Object.entries(save.resources).sort(([a], [b]) => Number(b === game.healthDef?.res) - Number(a === game.healthDef?.res));
-  for (const [id, amount] of order) {
-    if (game.hasResource(id) && finite(amount)) game.resource(id).amount = Math.max(0, amount);
+  for (const [id, amount] of Object.entries(save.resources)) {
+    if (game.hasResource(id) && finite(amount)) game.resource(id).amount = Math.max(0, Math.min(game.resource(id).max, amount));
   }
-  game.syncHealth();
   for (const id of save.running) {
     if (game.hasConverter(id) && !game.converter(id).unstoppable) game.converter(id).start();
   }
@@ -120,7 +117,7 @@ export function restore(game: Game, save: SaveData): void {
 export type LoadResult =
   | { kind: 'none' }
   | { kind: 'loaded'; save: SaveData }
-  /** A save from before the v3 rework: the game starts fresh. */
+  /** A save of an older format: the game starts fresh. */
   | { kind: 'outdated' }
   | { kind: 'error' };
 

@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 import { Game } from '../engine.ts';
 import { DATA } from '../content/index.ts';
-import { regionBoxes } from '../../ui/layout.ts';
+import { NODE_W, nodeHeight, regionBoxes } from '../../ui/layout.ts';
 
 const game = new Game();
 
@@ -49,7 +49,11 @@ describe('content', () => {
   test('loads (every id it refers to exists) and has exactly one final upgrade, on Wake up', () => {
     const finals = game.upgrades.filter((u) => u.def.final);
     expect(finals.map((u) => u.host?.id)).toEqual(['wake_up']);
-    for (const u of game.buildings) expect(DATA.sections.map((s) => s.id)).toContain(u.def.section);
+    for (const u of [...game.buildings, ...game.research]) expect(DATA.sections.map((s) => s.id)).toContain(u.def.section);
+    // Research is paid with Insight only (and every Insight upgrade is in Research).
+    expect(game.research.length).toBeGreaterThan(0);
+    for (const u of game.buildings) expect(u.costs.map((c) => c.resource.id), u.id).not.toContain('insight');
+    for (const u of game.research) expect(u.costs.map((c) => c.resource.id), u.id).toEqual(['insight']);
   });
 
   test('every resource, node and upgrade can be reached from the start', () => {
@@ -59,33 +63,38 @@ describe('content', () => {
     expect(game.upgrades.map((u) => u.id).filter((id) => !bought.has(id))).toEqual([]);
   });
 
-  test('every cost fits in storage (with all storage built), Stamina costs fit even at the lowest Health', () => {
+  test('every cost fits in storage (with all storage built)', () => {
     const max = new Map(game.resources.map((r) => [r.id, r.max]));
     for (const u of game.upgrades) for (const c of u.capacity) max.set(c.resource.id, max.get(c.resource.id)! + c.amount);
-    const h = DATA.health!;
-    const lowestStamina = 100 * (h.staminaMin + ((1 - h.staminaMin) * h.base) / 100);
     for (const u of game.upgrades) {
       for (const c of u.costs) {
         expect(c.amount, `${u.id}: ${c.resource.id}`).toBeLessThanOrEqual(max.get(c.resource.id)!);
-        if (c.resource.id === 'stamina') expect(c.amount, u.id).toBeLessThanOrEqual(lowestStamina);
       }
     }
   });
 
-  test("Health's sources add up to 110", () => {
-    const h = DATA.health!;
-    expect(h.base + h.sources.reduce((s, x) => s + x.points, 0)).toBe(110);
+  test("Productivity's good sources add up to 110, the Home points of all buildings fill the Home source", () => {
+    const p = DATA.productivity!;
+    const good = p.sources.filter((s) => s.kind !== 'penalty');
+    expect(p.base + good.reduce((s, x) => s + x.points, 0)).toBe(110);
+    const home = good.find((s) => s.kind === 'home')!;
+    expect(game.upgrades.reduce((s, u) => s + (u.def.home ?? 0), 0)).toBe(home.points);
   });
 
-  test("cards on the map don't overlap", () => {
-    const W = 230;
-    const H = 110;
-    const nodes = DATA.converters;
+  test("cards on the map don't overlap at their biggest (every upgrade, pace slider), with room for lines", () => {
+    const g = new Game();
+    for (let i = 0; i < 5; i++) for (const u of g.upgrades) if (!u.def.final && !u.bought && u.requirementsMet()) u.apply();
+    expect(g.paceMax()).toBeGreaterThan(0); // the slider makes cards taller
+    const GAP_X = 50; // between columns: room for arrows and their icons
+    const GAP_Y = 30; // between a card's bottom and the next card's top
+    const nodes = g.converters;
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const [a, b] = [nodes[i], nodes[j]];
-        const overlap = Math.abs(a.x - b.x) < W + 20 && Math.abs(a.y - b.y) < H;
-        expect(overlap, `${a.id} / ${b.id}`).toBe(false);
+        const sideBySide = Math.abs(a.def.x - b.def.x) < NODE_W + GAP_X;
+        const [top, below] = a.def.y <= b.def.y ? [a, b] : [b, a];
+        const apart = below.def.y >= top.def.y + nodeHeight(top, g) + GAP_Y;
+        expect(!sideBySide || apart, `${a.id} / ${b.id}`).toBe(true);
       }
     }
   });

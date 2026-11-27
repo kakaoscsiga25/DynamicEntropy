@@ -1,10 +1,10 @@
 // The game simulation. No UI code here, so it can be unit tested.
 // Started as a port of legacy/core/*.py (v1.3.2). v2 added storage, growth,
 // cycles (each node works in its own loop) and pace. v3 adds fading resources,
-// fire temperatures, a Field split between crops, Health, tool wear and
+// fire temperatures, a Field split between crops, Productivity, tool wear and
 // automatic rules bought with Insight.
 
-import type { ChangeDef, ConverterDef, GameData, HealthDef, RecipeDef, ResourceDef, Skill, UpgradeDef } from './defs.ts';
+import type { ChangeDef, ConverterDef, GameData, ProductivityDef, RecipeDef, ResourceDef, Skill, UpgradeDef } from './defs.ts';
 import { DATA } from './content/index.ts';
 
 /** The game clock: everything advances once per tick. */
@@ -68,7 +68,7 @@ export interface Cycle {
   outPace: number;
   /**
    * What each `makes` line gives when the cycle ends (before pace efficiency).
-   * Fixed when the cycle starts: growth, Health, wear, shares and fuel at that moment.
+   * Fixed when the cycle starts: growth, Productivity, wear, shares and fuel at that moment.
    */
   out: number[];
   /** What each `needs` line took when the cycle started. */
@@ -82,10 +82,8 @@ export interface Cycle {
 export class Resource {
   readonly def: ResourceDef;
   amount: number;
-  /** Storage limit; buildings can raise it (Stamina's also follows Health). */
+  /** Storage limit; buildings can raise it. */
   max: number;
-  /** The limit without the Health effect. */
-  baseMax: number;
   /** Fading speed multiplier (preservation buildings lower it). */
   fadeMult = 1;
   /** Produced during the current tick; added at the end of the tick (see flush). */
@@ -104,7 +102,6 @@ export class Resource {
     this.def = def;
     this.amount = def.start ?? 0;
     this.max = def.max;
-    this.baseMax = def.max;
   }
 
   get id() { return this.def.id; }
@@ -370,7 +367,7 @@ export class Converter {
     return !!this.def.wear && this.upgrades.some((u) => u.bought && u.def.tool);
   }
 
-  /** Health (manual work) × tool condition. */
+  /** Productivity (manual work) × tool condition. */
   workFactor(): number {
     return (this.needsAwake ? this.game.workFactor() : 1) * (this.wears ? wearFactor(this.condition) : 1);
   }
@@ -382,7 +379,7 @@ export class Converter {
 
   /**
    * How much of this output line a cycle makes (now, at the set pace).
-   * Growth, Health, wear and pace change the main outputs only, not byproducts.
+   * Growth, Productivity, wear and pace change the main outputs only, not byproducts.
    */
   output(r: Recipe, pace = this.pace): number {
     const base = r.amount * this.lineScale(r);
@@ -416,15 +413,23 @@ export class Converter {
 
   // ------------------------------------------------ conditions
 
+  /** What this node's own recipe takes of a resource per cycle (with the current settings). */
+  ownUse(res: Resource): number {
+    return this.needs.reduce((sum, n) => sum + (n.resource === res && !n.optional ? this.inAmount(n) : 0), 0);
+  }
+
   /** Can this line start a new cycle now? */
   lineOk(r: Recipe): boolean {
     if (r.guard && !r.guard.enabled) return true;
     if (r.heat) return r.heatOk();
     if (r.optional) return true;
     const res = r.resource;
+    // A rule's minimum must still be there after this node took its share
+    // (Forester: Wood cutting never cuts the Plant below the Forest's 50).
+    const min = r.guard ? r.minStock + this.ownUse(res) : r.minStock;
     return (
       res.canTake(this.inAmount(r)) &&
-      res.amount >= r.minStock - EPS &&
+      res.amount >= min - EPS &&
       res.amount + res.pending <= r.maxStock + EPS
     );
   }
@@ -719,7 +724,6 @@ export class Upgrade {
     }
     for (const c of this.capacity) {
       c.resource.max += c.amount;
-      c.resource.baseMax += c.amount;
     }
     for (const f of this.def.fade ?? []) this.game.resource(f.res).fadeMult *= f.factor;
     const g = this.def.guard;
@@ -768,14 +772,15 @@ export class Upgrade {
   }
 }
 
-// ---------------------------------------------------------------- Health
+// ---------------------------------------------------------------- Productivity
 
-export interface HealthPart {
+export interface ProductivityPart {
   name: string;
-  /** Points it gives now. */
+  /** Points it gives now (negative for a penalty). */
   points: number;
-  /** Points it can give at most. */
+  /** Points it can give at most (a penalty: can take away at most). */
   max: number;
+  penalty: boolean;
 }
 
 // ---------------------------------------------------------------- Game
@@ -787,6 +792,8 @@ export class Game {
   readonly upgrades: Upgrade[];
   /** Upgrades shown in the Build panel (not on a node). */
   readonly buildings: Upgrade[];
+  /** Upgrades shown in the Research panel (paid with Insight). */
+  readonly research: Upgrade[];
   /** Fire temperatures. */
   readonly fires: Resource[];
   /** Converters the player has seen (once discovered, they stay visible). */
@@ -794,7 +801,7 @@ export class Game {
   /** Bought upgrade ids, in buying order (saved, replayed on load). */
   readonly boughtOrder: string[] = [];
   ticks = 0;
-  readonly healthDef: HealthDef | null;
+  readonly productivityDef: ProductivityDef | null;
   /** What tells whether you're asleep (see asleep()). */
   private readonly dreamResources: Resource[];
   private readonly dreamNodes: Converter[];
@@ -808,7 +815,7 @@ export class Game {
     this.resources = data.resources.map((d) => new Resource(d));
     for (const r of this.resources) this.resourceMap.set(r.id, r);
     this.fires = this.resources.filter((r) => r.def.heat);
-    this.healthDef = data.health ?? null;
+    this.productivityDef = data.productivity ?? null;
 
     this.converters = data.converters.map((d) => {
       const c = new Converter(d, this);
@@ -825,11 +832,12 @@ export class Game {
       u.requires = (u.def.requires ?? []).map((id) => this.upgrade(id));
       u.host?.upgrades.push(u);
     }
-    this.buildings = this.upgrades.filter((u) => u.def.section);
+    const researchSections = new Set(data.sections.filter((s) => s.panel === 'research').map((s) => s.id));
+    this.buildings = this.upgrades.filter((u) => u.def.section && !researchSections.has(u.def.section));
+    this.research = this.upgrades.filter((u) => u.def.section && researchSections.has(u.def.section));
     this.dreamResources = this.resources.filter((r) => r.def.dream);
     this.dreamNodes = this.converters.filter((c) => c.dreams);
 
-    this.syncHealth();
     this.updateDiscovery();
   }
 
@@ -873,7 +881,7 @@ export class Game {
     for (const c of this.converters) c.update();
     this.fadeAndRegen();
     for (const r of this.resources) r.flush();
-    this.updateHealth();
+    this.updateProductivity();
     this.resources.forEach((r, i) => {
       r.lastDelta = r.amount - before[i];
       // At the storage limit the surplus is lost: show the real change then.
@@ -908,7 +916,7 @@ export class Game {
     }
   }
 
-  // ------------------------------------------------ sleep & health
+  // ------------------------------------------------ sleep & productivity
 
   /**
    * You're asleep while you have any Dreaming, or while Sleep or Wake up is
@@ -918,57 +926,52 @@ export class Game {
     return this.dreamResources.some((r) => r.amount > 0) || this.dreamNodes.some((c) => c.state === 'ok');
   }
 
-  /** Current Health, 0..100 (100 if the game has no Health). */
-  health(): number {
-    return this.healthDef ? this.resource(this.healthDef.res).amount : 100;
+  /** Current Productivity, 1..100 (100 if the game has none). */
+  productivity(): number {
+    return this.productivityDef ? this.resource(this.productivityDef.res).amount : 100;
   }
 
-  /** Where Health comes from now: every source with its points. */
-  healthParts(): HealthPart[] {
-    const h = this.healthDef;
-    if (!h) return [];
+  /** Where Productivity comes from now: every source with its points (penalties negative). */
+  productivityParts(): ProductivityPart[] {
+    const p = this.productivityDef;
+    if (!p) return [];
     const warmest = Math.max(0, ...this.fires.map((r) => r.amount));
     const home = this.upgrades.reduce((sum, u) => sum + (u.bought ? (u.def.home ?? 0) : 0), 0);
+    const clamp = (x: number) => Math.max(0, Math.min(1, x));
     return [
-      { name: 'Base', points: h.base, max: h.base },
-      ...h.sources.map((s) => {
+      { name: 'Base', points: p.base, max: p.base, penalty: false },
+      ...p.sources.map((s) => {
+        if (s.kind === 'penalty') {
+          const lost = s.points * clamp(this.resource(s.res).amount / s.full);
+          return { name: s.name, points: lost > 0 ? -lost : 0, max: s.points, penalty: true };
+        }
         let share = 0;
         if (s.kind === 'stock') share = this.resource(s.res).amount / s.full;
         else if (s.kind === 'heat') share = warmest / s.full;
         else share = home / s.points;
-        return { name: s.name, points: s.points * Math.max(0, Math.min(1, share)), max: s.points };
+        return { name: s.name, points: s.points * clamp(share), max: s.points, penalty: false };
       }),
     ];
   }
 
-  /** Where Health is heading: the sum of its sources (can be above 100, Health stops at 100). */
-  healthTarget(): number {
-    return this.healthParts().reduce((sum, p) => sum + p.points, 0);
+  /** Where Productivity is heading: the sum of its sources (can be above 100 or below the minimum). */
+  productivityTarget(): number {
+    return this.productivityParts().reduce((sum, p) => sum + p.points, 0);
   }
 
-  /** Output of manual work (nodes that use Stamina) at the current Health. */
+  /** Output of manual work (nodes that use Stamina) at the current Productivity: 0.01..1. */
   workFactor(): number {
-    const h = this.healthDef;
-    if (!h) return 1;
-    return h.workMin + ((1 - h.workMin) * this.health()) / 100;
+    return this.productivity() / 100;
   }
 
-  private updateHealth(): void {
-    const h = this.healthDef;
-    if (!h) return;
-    const r = this.resource(h.res);
-    const target = Math.min(r.max, this.healthTarget());
-    r.amount += (target - r.amount) * (1 - Math.exp(-h.rate / TICKS_PER_SECOND));
-    this.syncHealth();
-  }
-
-  /** Health sets the Stamina limit: a healthier you wakes up with more energy. */
-  syncHealth(): void {
-    const h = this.healthDef;
-    if (!h) return;
-    const stamina = this.resource(h.staminaRes);
-    stamina.max = stamina.baseMax * (h.staminaMin + ((1 - h.staminaMin) * this.health()) / 100);
-    if (stamina.amount > stamina.max) stamina.amount = stamina.max;
+  /** Productivity follows its target slowly, within min..100. */
+  private updateProductivity(): void {
+    const p = this.productivityDef;
+    if (!p) return;
+    const r = this.resource(p.res);
+    const target = Math.max(p.min, Math.min(r.max, this.productivityTarget()));
+    r.amount += (target - r.amount) * (1 - Math.exp(-p.rate / TICKS_PER_SECOND));
+    r.amount = Math.max(p.min, Math.min(r.max, r.amount));
   }
 
   // ------------------------------------------------ skills
@@ -1084,7 +1087,6 @@ export class Game {
     const u = this.upgrade(id);
     if (!u.buy()) return false;
     this.boughtOrder.push(u.id);
-    this.syncHealth();
     return true;
   }
 
@@ -1101,7 +1103,7 @@ export class Game {
 
   /** A resource is shown once a discovered node makes it (or it rots out of one that's shown). */
   isResourceVisible(r: Resource): boolean {
-    if (this.healthDef && r.id === this.healthDef.res) return true;
+    if (this.productivityDef && r.id === this.productivityDef.res) return true;
     const madeBy = (c: Converter) =>
       c.makes.some((m) => m.resource === r) || c.needs.some((n) => n.yields?.resource === r);
     if (this.converters.some((c) => this.discovered.has(c.id) && madeBy(c))) return true;

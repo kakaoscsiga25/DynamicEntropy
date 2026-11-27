@@ -1,9 +1,18 @@
 <script lang="ts">
-  import { game, ui, save, setFast, toggleBuildings, APP_VERSION, DEV } from '../ui/session.svelte';
+  import { game, ui, save, setFast, togglePanel, APP_VERSION, DEV } from '../ui/session.svelte';
 
-  const buildable = $derived.by(() => {
+  /** How many upgrades of each panel can be bought now. */
+  const buyable = $derived.by(() => {
     ui.frame;
-    return game.buildings.filter((u) => u.isBuyable()).length;
+    return {
+      build: game.buildings.filter((u) => u.isBuyable()).length,
+      research: game.research.filter((u) => u.isBuyable()).length,
+    };
+  });
+  /** Research shows up once the dream journal (where Insight comes from) is discovered. */
+  const researchSeen = $derived.by(() => {
+    ui.frame;
+    return game.discovered.has('journal') || game.research.some((u) => u.bought);
   });
   import { clock } from '../ui/format';
 </script>
@@ -26,10 +35,16 @@
   </div>
 
   <nav>
-    <button class="build" class:active={ui.showBuildings} onclick={toggleBuildings} title="Home and storage buildings">
-      🏠 Build
-      {#if buildable > 0}<span class="count">{buildable}</span>{/if}
+    <button class="build" class:active={ui.panel === 'build'} onclick={() => togglePanel('build')} title="Home, workshops, gear and storage">
+      🏠 <span class="long">Build</span>
+      {#if buyable.build > 0}<span class="count">{buyable.build}</span>{/if}
     </button>
+    {#if researchSeen}
+      <button class="build" class:active={ui.panel === 'research'} onclick={() => togglePanel('research')} title="Research: paid with Insight from your dream journal">
+        💡 <span class="long">Research</span>
+        {#if buyable.research > 0}<span class="count">{buyable.research}</span>{/if}
+      </button>
+    {/if}
     <button onclick={() => (ui.modal = 'howto')}><span class="long">How to play</span><span class="short">Help</span></button>
     <button onclick={() => save(true)}>Save</button>
     <button class="danger" onclick={() => (ui.modal = 'reset')}>Reset</button>

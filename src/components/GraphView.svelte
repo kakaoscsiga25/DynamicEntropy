@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { game, ui, select, setRegionRunning } from '../ui/session.svelte';
-  import { NODE_H, NODE_W, buildEdges, neighborMap, regionBoxes, worldBounds, type Edge } from '../ui/layout';
+  import { NODE_H, NODE_W, buildEdges, neighborMap, nodeHeight, regionBoxes, worldBounds, type Edge } from '../ui/layout';
   import NodeCard from './NodeCard.svelte';
   import { STATE_LABEL, STATE_ORDER } from './states';
 
@@ -11,8 +11,20 @@
   /** Below this zoom the cards collapse to big names (overview); detailed above it. */
   const FAR_ZOOM = 0.42;
 
-  const edges = buildEdges(game);
-  const neighbors = neighborMap(edges);
+  // Lines attach to the cards' bottoms, so they're rebuilt when a card gets
+  // taller or shorter (a pace slider appears, an upgrade adds a row).
+  let edgesKey = '';
+  let edgesCache: Edge[] = [];
+  const edges = $derived.by(() => {
+    ui.frame;
+    const key = game.converters.map((c) => nodeHeight(c, game)).join(',');
+    if (key !== edgesKey) {
+      edgesKey = key;
+      edgesCache = buildEdges(game);
+    }
+    return edgesCache;
+  });
+  const neighbors = $derived(neighborMap(edges));
   const regionColor = Object.fromEntries(game.data.regions.map((r) => [r.id, r.color]));
 
   let viewport: HTMLDivElement;

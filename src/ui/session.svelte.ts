@@ -16,6 +16,8 @@ const FAST_TICKS = 10;
 export const game = new Game();
 
 export type ModalKind = 'howto' | 'ending' | 'reset' | null;
+/** Top-bar panels: Build (home, storage...) and Research (paid with Insight). */
+export type PanelKind = 'build' | 'research';
 
 export const ui = $state({
   /**
@@ -38,8 +40,8 @@ export const ui = $state({
   playtime: 0,
   /** Mobile only: resource drawer open. */
   showResources: false,
-  /** The Build panel (buildings, not tied to a node) is open. */
-  showBuildings: false,
+  /** The open top-bar panel (upgrades not tied to a node), or null. */
+  panel: null as PanelKind | null,
 });
 
 function refresh() {
@@ -211,21 +213,21 @@ export function setRegionRunning(region: string, on: boolean) {
 export function select(id: string | null) {
   ui.selected = id !== null && ui.selected === id ? null : id;
   ui.selectedResource = null;
-  ui.showBuildings = false;
+  ui.panel = null;
 }
 
-/** Opens (or closes) the Build panel. */
-export function toggleBuildings() {
-  const open = !ui.showBuildings;
+/** Opens (or closes) a top-bar panel: Build or Research. */
+export function togglePanel(panel: PanelKind) {
+  const open = ui.panel !== panel;
   select(null);
-  ui.showBuildings = open;
+  ui.panel = open ? panel : null;
 }
 
 /** Shows a resource's details: who makes it, who uses it. Selecting it again closes them. */
 export function selectResource(id: string) {
   ui.selectedResource = ui.selectedResource === id ? null : id;
   ui.selected = null;
-  ui.showBuildings = false;
+  ui.panel = null;
   ui.showResources = false;
 }
 

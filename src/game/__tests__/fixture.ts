@@ -15,7 +15,8 @@ export const FIXTURE: GameData = {
   resources: [
     res('stamina', 100, { start: 100, awake: true }),
     res('dreaming', 100, { dream: true }),
-    res('health', 100, { start: 100 }),
+    res('productivity', 100, { start: 100 }),
+    res('sickness', 100),
     res('food', 100, { fade: { rate: 0.1 } }),
     res('apple', 100, { fade: { rate: 0.05, into: 'compost', yield: 0.5 } }),
     res('compost', 100),
@@ -108,24 +109,26 @@ export const FIXTURE: GameData = {
     { id: 'axe', name: 'Axe', tool: true, costs: [], changes: [{ converter: 'chop', mode: 'by', makes: [{ res: 'wood', amount: 1 }] }] },
     { id: 'big_field', name: 'Big field', costs: [], changes: [{ converter: 'field', mode: 'by', makes: [{ res: 'wheat', amount: 2 }] }] },
   ] satisfies UpgradeDef[],
-  sections: [{ id: 'home', name: 'Home' }, { id: 'mind', name: 'Mind' }],
+  sections: [{ id: 'home', name: 'Home' }, { id: 'mind', name: 'Mind', panel: 'research' }],
 };
 
-/** The same game with Health (sources: food stock 30 points, warmth 20, home 20; base 40). */
-export const FIXTURE_HEALTH: GameData = {
+/**
+ * The same game with Productivity (sources: food stock 30 points, warmth 20,
+ * home 20; base 40; Sickness takes away up to 80).
+ */
+export const FIXTURE_PRODUCTIVITY: GameData = {
   ...FIXTURE,
-  health: {
-    res: 'health',
+  productivity: {
+    res: 'productivity',
     base: 40,
     sources: [
       { kind: 'stock', name: 'Food', res: 'food', points: 30, full: 50 },
       { kind: 'heat', name: 'Warmth', points: 20, full: 30 },
       { kind: 'home', name: 'Home', points: 20 },
+      { kind: 'penalty', name: 'Sickness', res: 'sickness', points: 80, full: 100 },
     ],
     rate: 0.5,
-    staminaRes: 'stamina',
-    staminaMin: 0.5,
-    workMin: 0.5,
+    min: 1,
   },
 };
 

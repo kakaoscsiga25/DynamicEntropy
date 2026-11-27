@@ -32,19 +32,19 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="app" class:has-drawer={ui.selected !== null || ui.selectedResource !== null || ui.showBuildings}>
+<div class="app" class:has-drawer={ui.selected !== null || ui.selectedResource !== null || ui.panel !== null}>
   <div class="top"><TopBar /></div>
   <div class="resources" class:open={ui.showResources}><ResourcePanel /></div>
   <main class="graph"><GraphView /></main>
-  {#if ui.selected || ui.selectedResource || ui.showBuildings}
+  {#if ui.selected || ui.selectedResource || ui.panel}
     <div class="drawer">
-      {#key ui.selected ?? ui.selectedResource ?? 'buildings'}
+      {#key ui.selected ?? ui.selectedResource ?? ui.panel}
         {#if ui.selected}
           <NodeDrawer id={ui.selected} />
         {:else if ui.selectedResource}
           <ResourceDrawer id={ui.selectedResource} />
-        {:else}
-          <BuildingsDrawer />
+        {:else if ui.panel}
+          <BuildingsDrawer panel={ui.panel} />
         {/if}
       {/key}
     </div>
@@ -65,9 +65,9 @@
         <li><b>Nodes</b> turn resources into other resources in cycles (1 s, the bar at the bottom of the node): the inputs go in when a cycle starts, the outputs come out when it ends. Their chips show what goes in <span class="muted">→</span> what comes out.</li>
         <li><b>Start / stop</b> a node by clicking the <b>colored strip</b> on its left side (or right-click it, or press Space when it's selected). <b>▶ all / ❚❚ all</b> next to an island's name switches the whole island.</li>
         <li><b>Click</b> a node to see its details and buy its <b>upgrades</b>. A glowing <span class="badge">⬆ 1</span> means you can afford one.</li>
-        <li><b>Build</b> (top bar) has your home, workshops and storage, and the <b>Mind</b>: what you learn from your dreams (paid with 💡 Insight).</li>
+        <li><b>Build</b> (top bar) has your home, workshops, gear and storage. <b>Research</b> is what you learn from your dreams (paid with 💡 Insight from the journal).</li>
         <li><b>⚡ Stamina</b> only works while you're awake: when it runs out you fall asleep, and the nodes that use it pause until you wake up. Eating bread or fish gives some too.</li>
-        <li><b>❤️ Health</b> sets how much Stamina you wake up with and how much your work makes. It comes from varied food, a warm fire, your home and washing: open it in the resource list to see what's missing.</li>
+        <li><b>💪 Productivity</b>: everything you make by hand (nodes that use Stamina) is multiplied by it. It starts at 100% and drifts towards what keeps it up: varied food, your home and clothes. <b>🤒 Disease</b> (from dirt and cold, cured with medicine) and <b>🤕 Injuries</b> (from hard work, healed with bandages) pull it down. Open it in the resource list to see what's missing.</li>
         <li><b>⌛ Things fade:</b> food rots, fires cool down, dreams are forgotten. A fading stock settles where what comes in equals what fades, so make what you need, not more.</li>
         <li><b>🔥 Fires</b> are temperatures: more wood per cycle, hotter fire. Some work needs a certain range (the chip shows it), and one fire can't be everything at once.</li>
         <li><b>Watch the marks</b> on the resource bars: they're levels that matter, like the 50 Plant the Forest needs to regrow.</li>

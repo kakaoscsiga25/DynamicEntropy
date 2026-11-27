@@ -13,7 +13,7 @@ export interface RecipeDef {
   /** atLeast / atMost are shares of the storage limit (0.8 = 80% full) instead of numbers. */
   ofMax?: boolean;
   /**
-   * A side product: not changed by growth / pace / health / wear, never waits for
+   * A side product: not changed by growth / pace / Productivity / wear, never waits for
    * room (fills up to the limit). No connection line is drawn from it by default.
    */
   byproduct?: boolean;
@@ -48,7 +48,7 @@ export interface ResourceDef {
   color: string;
   /** Resource panel group label. */
   group: string;
-  /** Shown after the number ('°' for temperatures, '%' for Health). */
+  /** Shown after the number ('°' for temperatures, '%' for Productivity). */
   unit?: string;
   /** Visual only: used by many nodes, so its connection lines are only drawn on demand. */
   hub?: boolean;
@@ -182,7 +182,10 @@ export interface CostDef {
 export interface GuardDef {
   converter: string;
   res: string;
-  /** Runs only while the stock is at least this much... */
+  /**
+   * Runs only while the stock stays at least this much after the node took
+   * its own share (Forester: Plant never cut below 50)...
+   */
   atLeast?: number;
   /** ...or at most this much. */
   atMost?: number;
@@ -206,7 +209,7 @@ export interface UpgradeDef {
   capacity?: CostDef[];
   /** Multiplies how fast these resources fade (0.5 = half as fast). */
   fade?: { res: string; factor: number }[];
-  /** A better home: adds this many points to the Home part of Health. */
+  /** A better home: adds this many points to the Home part of Productivity. */
   home?: number;
   /** The node now uses a tool: it starts to wear out (see WearDef). */
   tool?: boolean;
@@ -235,29 +238,37 @@ export interface SectionDef {
   name: string;
   /** One sentence under the section title. */
   intro?: string;
+  /** Which top-bar panel lists it: Build (default) or Research (paid with Insight). */
+  panel?: 'build' | 'research';
 }
 
-/** Where Health comes from. Each source gives up to `points`; all of them add up to 110. */
-export type HealthSourceDef =
-  /** A stock (nutrition, hygiene): full points at `full` or more. */
+/**
+ * Where Productivity comes from. Each source gives up to `points`; the base and
+ * the sources add up to 110. Penalties take points away.
+ */
+export type ProductivitySourceDef =
+  /** A stock (nutrition, clothes): full points at `full` or more. */
   | { kind: 'stock'; name: string; res: string; points: number; full: number }
   /** Warmth: full points while the warmest fire is at least `full` degrees. */
   | { kind: 'heat'; name: string; points: number; full: number }
   /** Home: the `home` points of the bought buildings, up to `points`. */
-  | { kind: 'home'; name: string; points: number };
+  | { kind: 'home'; name: string; points: number }
+  /** A penalty (Disease, Injuries): takes away up to `points`, all of them at `full` or more. */
+  | { kind: 'penalty'; name: string; res: string; points: number; full: number };
 
-export interface HealthDef {
+/**
+ * Productivity: how much your manual work makes. Nodes that use Stamina make
+ * output × Productivity / 100. It slowly follows the sum of its sources.
+ */
+export interface ProductivityDef {
   res: string;
   /** Always there. */
   base: number;
-  sources: HealthSourceDef[];
-  /** Share of the gap to the target closed per second (Health follows its target slowly). */
+  sources: ProductivitySourceDef[];
+  /** Share of the gap to the target closed per second (it follows its target slowly). */
   rate: number;
-  /** The resource whose limit Health scales (Stamina) and the limit at 0 Health, as a share of the full limit. */
-  staminaRes: string;
-  staminaMin: number;
-  /** Output of nodes that use Stamina (manual work) at 0 Health, as a share of the output at 100. */
-  workMin: number;
+  /** It never goes below this (%). */
+  min: number;
 }
 
 export interface GameData {
@@ -267,5 +278,5 @@ export interface GameData {
   converters: ConverterDef[];
   upgrades: UpgradeDef[];
   sections: SectionDef[];
-  health?: HealthDef;
+  productivity?: ProductivityDef;
 }

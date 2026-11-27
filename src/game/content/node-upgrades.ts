@@ -5,6 +5,7 @@ import type { NodeUpgradeDef } from '../defs.ts';
 //   mode 'by': adds the numbers (stamina: -2 → uses 2 less)
 //   mode 'to': replaces the lines
 // tool: true → the node now uses a tool, which wears out (sharpen it in time).
+// fade: makes a resource fade slower (factor 0.5 = half as fast), e.g. a fire.
 // requires: other upgrades that must be bought first.
 
 export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
@@ -17,7 +18,7 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
         { res: 'fabric', amount: 50 },
         { res: 'bread', amount: 40 },
         { res: 'tool', amount: 10 },
-        { res: 'insight', amount: 20 },
+        { res: 'insight', amount: 30 },
       ],
     },
   ],
@@ -27,7 +28,7 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
     {
       id: 'bound_journal', name: 'Bound journal', text: 'Small handwriting.',
       costs: [{ res: 'paper', amount: 10 }, { res: 'fabric', amount: 5 }],
-      change: { mode: 'by', needs: [{ res: 'paper', amount: -0.5 }] },
+      change: { mode: 'by', needs: [{ res: 'paper', amount: -0.25 }] },
     },
   ],
   wash: [
@@ -118,6 +119,11 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
   ],
   fireplace: [
     {
+      id: 'stone_hearth', name: 'Stone hearth', text: 'Warm stones keep the heat: the fire cools down slower.',
+      costs: [{ res: 'clay', amount: 15 }, { res: 'stamina', amount: 20 }],
+      fade: [{ res: 'fire', factor: 0.75 }],
+    },
+    {
       id: 'chimney', name: 'Chimney', text: 'Hotter fire from the same wood.',
       costs: [{ res: 'brick', amount: 20 }, { res: 'clay', amount: 10 }],
       change: { mode: 'by', makes: [{ res: 'fire', amount: 2 }] },
@@ -125,9 +131,14 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
   ],
   furnace: [
     {
+      id: 'insulation', name: 'Insulated walls', text: 'The furnace cools down half as fast: hot with little wood.',
+      costs: [{ res: 'brick', amount: 25 }, { res: 'clay', amount: 25 }],
+      fade: [{ res: 'furnace', factor: 0.5 }],
+    },
+    {
       id: 'bellows', name: 'Bellows', text: 'Hotter fire from the same wood.',
       costs: [{ res: 'fabric', amount: 10 }, { res: 'wood', amount: 15 }],
-      change: { mode: 'by', makes: [{ res: 'furnace', amount: 2 }] },
+      change: { mode: 'by', makes: [{ res: 'furnace', amount: 3 }] },
     },
   ],
   dig_clay: [
@@ -160,7 +171,7 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
       change: {
         mode: 'by',
         needs: [{ res: 'water', amount: 0.5 }, { res: 'soil', amount: 0.2 }],
-        makes: [{ res: 'wheat', amount: 1 }, { res: 'cotton', amount: 1 }, { res: 'hay', amount: 1 }, { res: 'soil', amount: 0.3 }],
+        makes: [{ res: 'wheat', amount: 1 }, { res: 'cotton', amount: 1 }, { res: 'hay', amount: 1 }, { res: 'fruit', amount: 1 }, { res: 'soil', amount: 0.3 }],
       },
     },
     {
@@ -170,7 +181,7 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
       change: {
         mode: 'by',
         needs: [{ res: 'water', amount: 0.5 }, { res: 'soil', amount: 0.2 }],
-        makes: [{ res: 'wheat', amount: 1 }, { res: 'cotton', amount: 1 }, { res: 'hay', amount: 1 }, { res: 'soil', amount: 0.3 }],
+        makes: [{ res: 'wheat', amount: 1 }, { res: 'cotton', amount: 1 }, { res: 'hay', amount: 1 }, { res: 'fruit', amount: 1 }, { res: 'soil', amount: 0.3 }],
       },
     },
   ],
@@ -193,6 +204,29 @@ export const NODE_UPGRADES: Record<string, NodeUpgradeDef[]> = {
       id: 'flying_shuttle', name: 'Flying shuttle',
       costs: [{ res: 'wood', amount: 15 }, { res: 'iron', amount: 2 }],
       change: { mode: 'by', needs: [{ res: 'stamina', amount: -1.5 }] },
+    },
+  ],
+  sew_clothes: [
+    {
+      id: 'iron_needle', name: 'Iron needle',
+      costs: [{ res: 'iron', amount: 1 }],
+      change: { mode: 'by', needs: [{ res: 'stamina', amount: -1 }] },
+    },
+  ],
+
+  // ------------------------------------------------ Care
+  brew_remedy: [
+    {
+      id: 'mortar', name: 'Mortar and pestle',
+      costs: [{ res: 'clay', amount: 10 }, { res: 'brick', amount: 5 }],
+      change: { mode: 'by', makes: [{ res: 'medicine', amount: 1 }] },
+    },
+  ],
+  make_bandages: [
+    {
+      id: 'scissors', name: 'Scissors',
+      costs: [{ res: 'iron', amount: 1 }],
+      change: { mode: 'by', makes: [{ res: 'bandage', amount: 1 }] },
     },
   ],
 

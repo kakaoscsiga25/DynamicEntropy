@@ -48,7 +48,7 @@
       color: r.def.color,
       amount: whole(r.amount),
       unit: r.def.unit ?? '',
-      /** Health (%) and temperatures (°) read fine without "/100". */
+      /** Percentages (Productivity, Disease) and temperatures (°) read fine without "/100". */
       percent: r.def.unit === '%' || r.def.unit === '°',
       max: Math.round(r.max),
       ratio: Math.max(0, Math.min(1, r.amount / r.max)),

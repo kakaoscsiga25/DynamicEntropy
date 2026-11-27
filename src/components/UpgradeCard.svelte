@@ -79,7 +79,7 @@
       <li>🤖 <b>{view.guard.node}:</b> {view.guard.label} <span class="sub">(can be switched off)</span></li>
     {/if}
     {#if upgrade.def.home}
-      <li>❤️ Home +{upgrade.def.home} Health</li>
+      <li>💪 Home +{upgrade.def.home} Productivity</li>
     {/if}
     {#if upgrade.def.tool}
       <li>🔧 Uses a tool: it wears out and needs sharpening</li>

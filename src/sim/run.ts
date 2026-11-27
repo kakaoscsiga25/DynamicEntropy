@@ -36,6 +36,11 @@ function report(r: SimResult) {
   out.push(`Slept ${r.sleeps} times (one sleep per ${time(r.ticks / Math.max(1, r.sleeps))} on average).`);
   const bought = r.game.upgrades.filter((u) => u.bought).length;
   out.push(`Upgrades bought: ${bought} / ${r.game.upgrades.length}`);
+  const final = r.game.upgrades.find((u) => u.def.final);
+  if (final && !final.bought) {
+    const costs = final.costs.map((c) => `${c.resource.name} ${Math.floor(c.resource.amount)}/${c.amount}`);
+    out.push(`Final upgrade at the end: ${costs.join(', ')}`);
+  }
 
   out.push('', 'Timeline:');
   for (const e of r.events) out.push(`  ${time(e.tick).padStart(8)}  ${e.text}`);

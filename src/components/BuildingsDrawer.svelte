@@ -1,33 +1,51 @@
 <script lang="ts">
-  import { game, ui, toggleBuildings } from '../ui/session.svelte';
+  // A top-bar panel: Build (home, workshops, gear, storage) or Research (Insight).
+  import { game, ui, togglePanel, type PanelKind } from '../ui/session.svelte';
   import UpgradeCard from './UpgradeCard.svelte';
 
   import type { Upgrade } from '../game/engine';
+
+  let { panel }: { panel: PanelKind } = $props();
+
+  const TEXT = {
+    build: {
+      kicker: 'Home, workshops & storage',
+      title: '🏠 Build',
+      intro: "Upgrades that aren't tied to one node: your home, workshops, gear and storage.",
+    },
+    research: {
+      kicker: 'What you learn from your dreams',
+      title: '💡 Research',
+      intro: 'Paid with 💡 Insight: write your dream fragments in the journal right after waking up.',
+    },
+  };
+  const text = $derived(TEXT[panel]);
 
   // Buyable first, then the locked ones.
   const ordered = (list: Upgrade[]) => [...list.filter((u) => u.requirementsMet()), ...list.filter((u) => !u.requirementsMet())];
 
   const view = $derived.by(() => {
     ui.frame;
-    const open = game.buildings.filter((u) => !u.bought);
+    const all = panel === 'research' ? game.research : game.buildings;
+    const open = all.filter((u) => !u.bought);
     return {
       sections: game.data.sections
         .map((s) => ({ ...s, upgrades: ordered(open.filter((u) => u.def.section === s.id)) }))
         .filter((s) => s.upgrades.length),
-      built: game.buildings.filter((u) => u.bought),
+      built: all.filter((u) => u.bought),
     };
   });
 </script>
 
-<aside class="drawer" aria-label="Build">
+<aside class="drawer" aria-label={text.title}>
   <header>
     <div class="title">
-      <span class="kicker">Home, storage & mind</span>
-      <h2>🏠 Build</h2>
+      <span class="kicker">{text.kicker}</span>
+      <h2>{text.title}</h2>
     </div>
-    <button class="close" onclick={toggleBuildings} aria-label="Close" title="Close (Esc)">✕</button>
+    <button class="close" onclick={() => togglePanel(panel)} aria-label="Close" title="Close (Esc)">✕</button>
   </header>
-  <p class="intro">Upgrades that aren't tied to one node: your home, workshops, storage, and what you learn from your dreams.</p>
+  <p class="intro">{text.intro}</p>
 
   {#each view.sections as sec (sec.id)}
     <section>
@@ -40,7 +58,7 @@
       </div>
     </section>
   {:else}
-    <p class="intro">Everything is built.</p>
+    <p class="intro">{panel === 'research' ? 'Everything is learned.' : 'Everything is built.'}</p>
   {/each}
 
   {#if view.built.length}

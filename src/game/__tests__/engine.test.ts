@@ -1,7 +1,7 @@
 // Tests for the engine's rules, on a small made-up game (fixture.ts).
 import { describe, expect, test } from 'vitest';
 import { paceEfficiency, paceOutput, wearFactor } from '../engine.ts';
-import { CYCLE, FIXTURE_HEALTH, run, testGame } from './fixture.ts';
+import { CYCLE, FIXTURE_PRODUCTIVITY, run, testGame } from './fixture.ts';
 
 describe('cycles', () => {
   test('a cycle lasts 1 s (10 ticks): inputs when it starts, outputs when it ends', () => {
@@ -354,33 +354,60 @@ describe('automatic rules (guards)', () => {
     g.tick();
     expect(c.state).toBe('ok');
   });
+
+  test("a rule's minimum counts after the node's own use (never takes the stock below it)", () => {
+    const g = testGame();
+    const c = g.converter('fishing'); // uses 1 fish a cycle
+    g.buy('warden'); // at least half of 40 = 20
+    c.start();
+    g.resource('fish').amount = 20.5; // 19.5 would be left: too little
+    g.tick();
+    expect(c.state).toBe('noInput');
+    g.resource('fish').amount = 21; // 20 left: fine
+    g.tick();
+    expect(c.state).toBe('ok');
+    expect(g.resource('fish').amount).toBeGreaterThanOrEqual(20 - 1e-9);
+  });
 });
 
-describe('health', () => {
-  test('Health follows the sum of its sources, capped at 100; it scales Stamina and manual work', () => {
-    const g = testGame(FIXTURE_HEALTH);
-    expect(g.healthTarget()).toBe(40);
+describe('productivity', () => {
+  test('follows the sum of its sources (capped at 100) and scales manual work only', () => {
+    const g = testGame(FIXTURE_PRODUCTIVITY);
+    expect(g.productivity()).toBe(100); // starts full
+    expect(g.productivityTarget()).toBe(40);
     run(g, 200);
-    expect(g.health()).toBeCloseTo(40, 0);
-    expect(g.resource('stamina').max).toBeCloseTo(70, 0);
-    expect(g.workFactor()).toBeCloseTo(0.7, 1);
-    expect(g.converter('chop').workFactor()).toBeCloseTo(0.7, 1);
+    expect(g.productivity()).toBeCloseTo(40, 0);
+    expect(g.workFactor()).toBeCloseTo(0.4, 2);
+    expect(g.resource('stamina').max).toBe(100); // the Stamina limit doesn't change
+    const chop = g.converter('chop');
+    expect(chop.workFactor()).toBeCloseTo(0.4, 2);
+    expect(chop.output(chop.makes[0])).toBeCloseTo(0.4, 2);
     expect(g.converter('fishing').workFactor()).toBe(1); // no Stamina: not manual work
 
     g.buy('hut');
     g.resource('fire').amount = 60;
     g.resource('food').amount = 100;
-    expect(g.healthParts().map((p) => [p.name, Math.round(p.points)])).toEqual([
-      ['Base', 40], ['Food', 30], ['Warmth', 20], ['Home', 20],
+    expect(g.productivityParts().map((p) => [p.name, Math.round(p.points)])).toEqual([
+      ['Base', 40], ['Food', 30], ['Warmth', 20], ['Home', 20], ['Sickness', 0],
     ]);
-    expect(g.healthTarget()).toBe(110);
+    expect(g.productivityTarget()).toBe(110);
     for (let i = 0; i < 300; i++) {
       g.resource('food').amount = 100;
       g.resource('fire').amount = 60;
       g.tick();
     }
-    expect(g.health()).toBeCloseTo(100, 0);
-    expect(g.resource('stamina').max).toBeCloseTo(100, 0);
+    expect(g.productivity()).toBeCloseTo(100, 0);
+  });
+
+  test('penalties take points away; it never drops below the minimum', () => {
+    const g = testGame(FIXTURE_PRODUCTIVITY);
+    g.resource('sickness').amount = 50;
+    expect(g.productivityParts().at(-1)).toEqual({ name: 'Sickness', points: -40, max: 80, penalty: true });
+    expect(g.productivityTarget()).toBe(0);
+    g.resource('sickness').amount = 100; // target 40 - 80 = -40
+    run(g, 400);
+    expect(g.productivity()).toBeCloseTo(1, 3);
+    expect(g.workFactor()).toBeCloseTo(0.01, 4);
   });
 });
 

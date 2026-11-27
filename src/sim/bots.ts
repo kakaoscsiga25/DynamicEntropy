@@ -97,12 +97,12 @@ type HeatNeed = { lo: number; hi: number; w: number };
 
 /**
  * Picks temperatures for the fires: the one that serves the most needed work
- * (warmth for Health counts a little too), sticking to the current one unless
+ * (staying above the cold, which makes you sick, counts too), sticking to the current one unless
  * another is clearly better (a fire takes minutes to heat up or cool down).
  * With two fires, the second one covers what the first one can't.
  */
 function pickTemperatures(needs: HeatNeed[], current: (number | null)[]): number[] {
-  const all: HeatNeed[] = [...needs, { lo: 30, hi: 100, w: 0.3 }];
+  const all: HeatNeed[] = [...needs, { lo: 12, hi: 100, w: 0.5 }];
   const score = (t: number, list: HeatNeed[]) => list.reduce((s, r) => s + (t >= r.lo && t <= r.hi ? r.w : 0), 0);
   const candidates = all.flatMap((r) => [r.lo + 4, Math.min(r.hi - 4, r.lo + 10)]).filter((t) => t > 0 && t <= 96);
   const best = (list: HeatNeed[], keep: number | null) => {
@@ -132,14 +132,19 @@ interface Style {
   focus: number;
   /** Sharpens tools below this condition (%). */
   sharpenBelow: number;
+  /**
+   * Leaving for a while (visitors): wants the upgrades' resources full, not just
+   * enough, so their makers keep working until the next visit.
+   */
+  leaving?: boolean;
 }
 
 /**
  * Works backwards from the upgrades it can buy next: runs only the nodes whose
  * output is still needed (plus their supply chain), tries out nodes that make
  * something it has never seen (that's how new nodes get discovered), keeps
- * itself healthy (food, warmth, washing), and twiddles its thumbs to fall
- * asleep when its Stamina is useless.
+ * itself productive (food, clothes, warmth, washing, medicine, bandages), and
+ * twiddles its thumbs to fall asleep when its Stamina is useless.
  *
  * With `micro`, it also protects self-sustaining loops (never lets other nodes
  * take Plant below the Forest's minimum), keeps the Soil up with clover, the
@@ -199,13 +204,19 @@ function plan(game: Game, style: Style) {
     const v = Math.min(r.max, amount);
     if (v > (want.get(r) ?? 0)) want.set(r, v);
   };
-  for (const u of targets) for (const c of u.costs) raise(c.resource, c.amount);
+  for (const u of targets) for (const c of u.costs) raise(c.resource, style.leaving ? c.resource.max : c.amount);
   /** What the upgrades need (food eaten from this would be missed). */
   const goal = new Map(want);
-  // Staying healthy: some of every food, soap, and the nutrition / hygiene bars up.
-  for (const [id, amount] of [['grains', 60], ['vitamins', 60], ['protein', 60], ['hygiene', 60], ['bread', 6], ['fruit', 8], ['soap', 2], ['catch', 2]] as const) {
+  // Staying productive: some of every food, clothes, soap, medicine and
+  // bandages, and the nutrition / hygiene bars up.
+  for (const [id, amount] of [
+    ['grains', 50], ['vitamins', 50], ['protein', 50], ['hygiene', 60], ['clothes', 10],
+    ['bread', 6], ['fruit', 8], ['soap', 2], ['catch', 2],
+  ] as const) {
     raise(res(id), amount);
   }
+  if (res('disease').amount > 5) raise(res('medicine'), 2);
+  if (res('injury').amount > 5) raise(res('bandage'), 3);
 
   // Walk the supply chain backwards until nothing changes.
   const useful = new Set<Converter>();
@@ -219,7 +230,10 @@ function plan(game: Game, style: Style) {
       const needed = c.makes.some((m) => {
         if (m.amount <= 0 || m.resource.id === 'stamina') return false;
         if (m.byproduct && !c.id.startsWith('eat_')) return false;
-        if ((want.get(m.resource) ?? 0) <= m.resource.amount + 1e-9) return false;
+        // Something that fades and an upgrade needs: keep making it, or it's
+        // gone by the time the rest is there (bread for the final upgrade).
+        const keepsFading = m.resource.fadeRate > 0 && (goal.get(m.resource) ?? 0) > 0;
+        if (!keepsFading && (want.get(m.resource) ?? 0) <= m.resource.amount + 1e-9) return false;
         // A running loop makes this by itself: the starter node isn't needed.
         const min = protect.get(m.resource);
         if (min !== undefined && !isLoopFor(c, m.resource) && m.resource.amount >= min) return false;
@@ -308,6 +322,17 @@ function plan(game: Game, style: Style) {
     if (res('hygiene').amount < 70) on.add(wash);
     else on.delete(wash);
   }
+  // ---- care: medicine and bandages are only used when they help (the nodes
+  // wait for at least 10 Disease / 8 Injuries by themselves)
+  for (const id of ['take_medicine', 'dress_wounds']) {
+    const c = node(id);
+    if (c) on.add(c);
+  }
+  const sew = node('sew_clothes');
+  if (sew) {
+    if (res('clothes').amount < 10) on.add(sew);
+    else on.delete(sew);
+  }
 
   // ---- the field: crops by what's needed; micro keeps the soil up with clover
   const field = node('field');
@@ -315,26 +340,34 @@ function plan(game: Game, style: Style) {
     const wants = (id: string) => (want.get(res(id)) ?? 0) > res(id).amount;
     const crop = (id: string, user: string) => {
       const r = res(id);
-      if (r.amount >= r.max - 5) return 0; // full: it would stop the whole field
+      if (r.amount >= r.max - 5) return 0; // full: the rest would be lost
       const u = node(user);
       return (u && useful.has(u)) || wants(id) ? 1 : 0.15;
     };
-    const wheat = crop('wheat', 'mill');
-    const cotton = crop('cotton', 'loom');
+    const part = (id: string) => field.parts.findIndex((p) => p.id === id);
+    const weights = new Map<string, number>([
+      ['wheat', crop('wheat', 'mill')],
+      ['cotton', crop('cotton', 'loom')],
+      // Fruit from the field instead of picking it by hand.
+      ['orchard', wants('fruit') ? 0.6 : 0.05],
+    ]);
     const hayNeeded = !!node('tame_sheep') || !!node('flock');
     // Try some clover once, to see what it's good for.
     let clover = (hayNeeded && res('hay').amount < 40) || !seen.has('hay') ? 0.25 : 0;
     if (micro) {
       const soil = res('soil').amount;
-      const prev = field.shares[2] ?? 0;
+      const prev = field.shares[part('clover')] ?? 0;
       const step = soil < 75 ? 0.1 : soil < 85 ? 0.02 : soil > 95 ? -0.05 : 0;
       clover = Math.max(clover, Math.min(0.7, Math.max(0, prev + (game.ticks % 20 === 0 ? step : 0))));
     }
     const rest = 1 - clover;
-    const total = wheat + cotton;
-    if (total > 0) game.setShares(field.id, [(rest * wheat) / total, (rest * cotton) / total, clover]);
-    else game.setShares(field.id, [0, 0, 1]);
-    if (useful.has(node('mill')!) || (node('loom') && useful.has(node('loom')!)) || hayNeeded) on.add(field);
+    const total = [...weights.values()].reduce((a, b) => a + b, 0);
+    const shares = field.parts.map((p) => (p.id === 'clover' ? (total > 0 ? clover : 1) : total > 0 ? (rest * (weights.get(p.id) ?? 0)) / total : 0));
+    game.setShares(field.id, shares);
+    if (useful.has(node('mill')!) || (node('loom') && useful.has(node('loom')!)) || hayNeeded || wants('fruit')) on.add(field);
+    // The field makes the fruit now: no picking by hand unless it's not enough.
+    const gather = node('gather_fruit');
+    if (gather && field.shares[part('orchard')] > 0.1 && res('fruit').amount > 3) on.delete(gather);
   }
 
   // ---- the starter: feed it, but micro only as much as needed
@@ -345,7 +378,7 @@ function plan(game: Game, style: Style) {
   // (Baking only shows up once there's Starter: get some to find it.)
   const baker = !baking || useful.has(baking);
   if (feed) {
-    if (baker && (!micro || starter.amount < 12)) on.add(feed);
+    if (baker && (!micro || style.leaving || starter.amount < 12)) on.add(feed);
     else on.delete(feed);
   }
   if (wild) {
@@ -419,7 +452,7 @@ export const planner: Bot = {
 function sleepForDreams(game: Game) {
   if (!has(game, 'journal') || !has(game, TWIDDLE) || game.asleep()) return;
   const insightWanted = game.upgrades.some((u) => !u.bought && u.requirementsMet() && u.costs.some((c) => c.resource.id === 'insight' && c.amount > c.resource.amount));
-  if (!insightWanted || game.resource('fragment').amount >= 2 || game.resource('paper').amount < 1) return;
+  if (!insightWanted || game.resource('fragment').amount >= 1 || game.resource('paper').amount < 0.5) return;
   setRunning(game.converter(TWIDDLE), true);
   for (const id of ['eat_bread', 'eat_fish']) if (has(game, id)) setRunning(game.converter(id), false);
 }
@@ -434,20 +467,31 @@ export const micro: Bot = {
   },
 };
 
+/** How long an occasional player stays when they check in: one minute of game time. */
+const VISIT_SECONDS = 60;
+
 /**
- * Occasional player: checks in every few minutes (game time), then sets up the
- * nodes like the planner and leaves Twiddling thumbs on so it can't get stuck
- * awake in between. Nothing changes between visits.
+ * Occasional player: checks in every few minutes (game time) and then plays
+ * like the micro bot for a minute (protects loops, sets fires, eats, buys...).
+ * When leaving, it leaves on whatever fills up what the next upgrades need (not
+ * just "enough for now"), and switches Twiddling thumbs on so it can't get
+ * stuck awake.
+ * Nothing changes between visits.
  */
 export function visitor(minutes: number): Bot {
   const every = Math.max(1, Math.round(minutes * 60 * TICKS_PER_SECOND));
+  const stay = VISIT_SECONDS * TICKS_PER_SECOND;
   return {
     name: `visit-${minutes}m`,
-    description: `Checks in every ${minutes} minutes: sets nodes like the planner, Twiddling thumbs always on.`,
+    description: `Checks in every ${minutes} minutes and plays like the micro bot for ${VISIT_SECONDS} s, Twiddling thumbs on when leaving.`,
     act(game) {
-      if (game.ticks % every !== 0) return;
-      plan(game, { micro: false, focus: 3, sharpenBelow: 70 });
-      if (has(game, TWIDDLE)) setRunning(game.converter(TWIDDLE), true);
+      const t = game.ticks % every;
+      if (t >= stay) return;
+      const leaving = t === stay - 1;
+      plan(game, { micro: true, focus: 3, sharpenBelow: 70, leaving });
+      twiddleIfIdle(game);
+      sleepForDreams(game);
+      if (leaving && has(game, TWIDDLE)) setRunning(game.converter(TWIDDLE), true);
     },
   };
 }
